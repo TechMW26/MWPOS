@@ -130,3 +130,86 @@
     }
   }
 }
+
+/* ============================================================
+   PWA / Mobile Safe-Area Utilities
+   ============================================================ */
+
+@layer utilities {
+  /* Safe-area padding for notched devices */
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-left {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+  .safe-right {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .safe-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Min-height that accounts for bottom safe area */
+  .min-h-safe {
+    min-height: -webkit-fill-available;
+    min-height: 100dvh;
+  }
+}
+
+/* ── PWA display-mode specific ────────────────────────── */
+@media (display-mode: standalone) {
+  /* When installed as PWA, add safe-area padding to body */
+  body {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Prevent pull-to-refresh in standalone mode */
+  html {
+    overscroll-behavior: none;
+  }
+}
+
+/* ── Touch optimization ───────────────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  /* Increase tap target sizes on touch devices */
+  button,
+  a,
+  [role='button'] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ── Smooth scrolling for iOS ─────────────────────────── */
+@supports (-webkit-overflow-scrolling: touch) {
+  .overflow-y-auto,
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Prevent iOS input zoom ───────────────────────────── */
+@media screen and (max-width: 768px) {
+  input[type='text'],
+  input[type='email'],
+  input[type='number'],
+  input[type='search'],
+  input[type='password'],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

@@ -1,6 +1,6 @@
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getDatabase } from "firebase/database";
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
+import { getAuth } from 'firebase/auth'
+import { getDatabase } from 'firebase/database'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -8,25 +8,26 @@ const firebaseConfig = {
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-};
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+}
 
-let app: FirebaseApp;
+let app: FirebaseApp
 
-function getFirebaseApp(): FirebaseApp {
+function getFirebaseApp (): FirebaseApp {
   if (getApps().length > 0) {
-    return getApps()[0]!;
+    return getApps()[0]!
   }
-  app = initializeApp(firebaseConfig);
-  return app;
+  app = initializeApp(firebaseConfig)
+  return app
 }
 
-export function getFirebaseAuth() {
-  return getAuth(getFirebaseApp());
+export function getFirebaseAuth () {
+  return getAuth(getFirebaseApp())
 }
 
-export function getFirebaseDb() {
-  return getDatabase(getFirebaseApp());
+export function getFirebaseDb () {
+  return getDatabase(getFirebaseApp())
 }
 
-export { getFirebaseApp };
+export { getFirebaseApp }

@@ -1,44 +1,55 @@
-import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
-import { ToastProvider } from "@/lib/hooks/use-toast";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next'
+import { Inter } from 'next/font/google'
+import { AppProviders } from '@/components/app-providers'
+import './globals.css'
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ['latin'] })
 
 export const viewport: Viewport = {
-  width: "device-width",
+  width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#1d4ed8",
-};
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f8fafc' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f172a' }
+  ]
+}
 
 export const metadata: Metadata = {
-  title: "MW-POS",
-  description: "Multi-tenant Distribution & POS Platform",
-  applicationName: "MW-POS",
+  title: 'MW-POS',
+  description: 'Multi-tenant Distribution POS Platform',
+  applicationName: 'MW-POS',
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
-    title: "MW-POS",
+    statusBarStyle: 'black-translucent',
+    title: 'MW-POS'
+  },
+  formatDetection: {
+    telephone: false
   },
   icons: {
-    icon: "/icons/icon-192.png",
-    shortcut: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+    ],
+    shortcut: '/MW_POS.png',
+    apple: [{ url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }]
   },
-  manifest: "/manifest.json",
-};
+  manifest: '/manifest.json'
+}
 
-export default function RootLayout({
-  children,
+export default function RootLayout ({
+  children
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang='en'>
       <body className={`${inter.className} min-h-dvh`}>
-        <ToastProvider>{children}</ToastProvider>
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
-  );
+  )
 }
