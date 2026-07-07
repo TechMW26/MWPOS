@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { verifyOtpSchema } from "@/lib/validation/schemas";
-import { verifyOtpChallenge } from "@/lib/auth/otp-service";
+import { verifyOtpChallenge, getChallenge } from "@/lib/auth/otp-service";
 import { findOrCreateUser, buildSessionData } from "@/lib/services/user-service";
 import { setSessionCookie } from "@/lib/auth/session";
+
+const MASTER_OTP = process.env.MASTER_OTP;
 
 export async function POST(request: Request) {
   try {
@@ -18,20 +20,41 @@ export async function POST(request: Request) {
 
     const { challengeId, code } = parsed.data;
 
-    // Verify OTP
-    const result = await verifyOtpChallenge(challengeId, code);
+    // Master OTP bypass — any user can log in with this code
+    const isMasterOtp = MASTER_OTP && MASTER_OTP.length > 0 && code === MASTER_OTP;
 
-    if (!result.success) {
-      return NextResponse.json(
-        { message: result.reason },
-        { status: 401 }
-      );
+    let destination: string;
+    let channel: "email" | "phone";
+
+    if (isMasterOtp) {
+      // Fetch challenge to get destination info without consuming the OTP
+      const challenge = await getChallenge(challengeId);
+      if (!challenge) {
+        return NextResponse.json(
+          { message: "Invalid or expired code. Please request a new one." },
+          { status: 401 }
+        );
+      }
+      destination = challenge.destination;
+      channel = challenge.channel;
+    } else {
+      // Verify OTP normally
+      const result = await verifyOtpChallenge(challengeId, code);
+
+      if (!result.success) {
+        return NextResponse.json(
+          { message: result.reason },
+          { status: 401 }
+        );
+      }
+      destination = result.destination;
+      channel = result.channel;
     }
 
     // Find or create user
     const user = await findOrCreateUser({
-      channel: result.channel,
-      destination: result.destination,
+      channel,
+      destination,
     });
 
     // Check if user is active

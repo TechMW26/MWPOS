@@ -28,15 +28,37 @@ export default function LoginPage() {
     }
   }, [destination, isPasswordMode]);
 
+  const validate = (): string | null => {
+    const val = destination.trim();
+    if (!val) return "Please enter a value";
+
+    if (channel === "email") {
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRe.test(val)) return "Please enter a valid email address";
+    } else {
+      // Allow +, digits, spaces, dashes, parens — at least 7 digits
+      const digits = val.replace(/\D/g, "");
+      if (digits.length < 7) return "Please enter a valid phone number (at least 7 digits)";
+    }
+
+    return null;
+  };
+
   const handleRequestOtp = async () => {
     setError("");
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setLoading(true);
 
     try {
       const res = await fetch("/api/auth/request-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel, destination }),
+        body: JSON.stringify({ channel, destination: destination.trim() }),
       });
 
       const data = await res.json();
@@ -46,7 +68,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(`/verify?challengeId=${data.challengeId}&channel=${channel}&destination=${encodeURIComponent(destination)}`);
+      router.push(`/verify?challengeId=${data.challengeId}&channel=${channel}&destination=${encodeURIComponent(destination.trim())}`);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -134,13 +156,15 @@ export default function LoginPage() {
           <div className="relative">
             {isPasswordMode ? (
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            ) : channel === "phone" ? (
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             ) : (
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             )}
             <Input
               ref={inputRef}
-              type="email"
-              placeholder="you@example.com"
+              type={channel === "phone" && !isPasswordMode ? "tel" : "email"}
+              placeholder={isPasswordMode ? "you@example.com" : channel === "phone" ? "+1 555-0123" : "you@example.com"}
               value={destination}
               onChange={(e) => setDestination(e.target.value)}
               onKeyDown={handleKeyDown}

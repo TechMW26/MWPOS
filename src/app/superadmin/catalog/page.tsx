@@ -14,7 +14,7 @@ export default function CatalogPage() {
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const productsLive = useRealtimeList({ path: 'products', fallbackUrl: '/api/products' });
-  const skusLive = useRealtimeList({ path: 'skus', fallbackUrl: '/api/skus' });
+  const skusLive = useRealtimeList({ path: 'productSkus', fallbackUrl: '/api/skus' });
   const products = productsLive.data;
   const skus = skusLive.data;
   const loading = productsLive.loading || skusLive.loading;

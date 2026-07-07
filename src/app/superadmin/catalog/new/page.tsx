@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import Link from "next/link";
 
 interface SkuForm {
   key: string;
+  id?: string;
   sku: string;
   barcode: string;
   unit: string;
@@ -21,32 +22,68 @@ interface SkuForm {
   taxRate: number;
 }
 
+function emptySku(): SkuForm {
+  return { key: crypto.randomUUID(), sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5 };
+}
+
 export default function NewProductPage() {
   const router = useRouter();
-  const [product, setProduct] = useState({
-    name: "", description: "", brand: "", categoryId: "cat-grocery", imageUrl: "",
-  });
-  const [skus, setSkus] = useState<SkuForm[]>([{
-    key: crypto.randomUUID(),
-    sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5,
-  }]);
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("edit");
+
+  const [product, setProduct] = useState({ name: "", description: "", brand: "", categoryId: "cat-grocery", imageUrl: "" });
+  const [skus, setSkus] = useState<SkuForm[]>([emptySku()]);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [loadingEdit, setLoadingEdit] = useState(!!editId);
 
-  function addSku() {
-    setSkus([...skus, {
-      key: crypto.randomUUID(),
-      sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5,
-    }]);
-  }
+  const isEdit = !!editId;
 
+  // Load existing product + SKUs for edit mode
+  useEffect(() => {
+    if (!editId) { setLoadingEdit(false); return; }
+    (async () => {
+      try {
+        const [prodRes, skusRes] = await Promise.all([
+          fetch("/api/products"),
+          fetch("/api/skus"),
+        ]);
+        const products = await prodRes.json();
+        const allSkus = await skusRes.json();
+        const found = (Array.isArray(products) ? products : []).find((p: any) => p.id === editId);
+        if (found) {
+          setProduct({ name: found.name || "", description: found.description || "", brand: found.brand || "", categoryId: found.categoryId || "cat-grocery", imageUrl: found.imageUrl || "" });
+          const productSkus = (Array.isArray(allSkus) ? allSkus : []).filter((s: any) => s.productId === editId);
+          if (productSkus.length > 0) {
+            setSkus(productSkus.map((s: any) => ({ key: crypto.randomUUID(), id: s.id, sku: s.sku || "", barcode: s.barcode || "", unit: s.unit || "piece", mrp: s.mrp || 0, sellingPrice: s.sellingPrice || 0, costPrice: s.costPrice || 0, taxType: s.taxType || "GST", taxRate: s.taxRate ?? 5 })));
+          }
+        } else {
+          setError("Product not found");
+        }
+      } catch { setError("Failed to load product"); }
+      finally { setLoadingEdit(false); }
+    })();
+  }, [editId]);
+
+  function addSku() { setSkus([...skus, emptySku()]); }
   function updateSku(key: string, field: keyof SkuForm, value: string | number) {
     setSkus(skus.map(s => s.key === key ? { ...s, [field]: value } : s));
   }
+  function removeSku(key: string) { if (skus.length <= 1) return; setSkus(skus.filter(s => s.key !== key)); }
 
-  function removeSku(key: string) {
-    if (skus.length <= 1) return;
-    setSkus(skus.filter(s => s.key !== key));
+  async function handleImageUpload(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url } = await res.json();
+      setProduct({ ...product, imageUrl: url });
+    } catch { setError("Image upload failed"); }
+    finally { setUploading(false); }
   }
 
   async function handleSave() {
@@ -56,31 +93,35 @@ export default function NewProductPage() {
 
     setSaving(true); setError("");
     try {
-      // Create product
-      const prodRes = await fetch("/api/products", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(product),
-      });
-      if (!prodRes.ok) throw new Error("Failed to create product");
-      const newProduct = await prodRes.json();
+      let productId: string;
 
-      // Create all SKUs
-      for (const sku of validSkus) {
-        await fetch("/api/skus", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productId: newProduct.id,
-            sku: sku.sku,
-            barcode: sku.barcode || null,
-            unit: sku.unit,
-            mrp: sku.mrp,
-            sellingPrice: sku.sellingPrice,
-            costPrice: sku.costPrice,
-            taxType: sku.taxType,
-            taxRate: sku.taxRate,
-          }),
+      if (isEdit) {
+        // Update existing product
+        const prodRes = await fetch("/api/products", {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editId, ...product }),
         });
+        if (!prodRes.ok) throw new Error("Failed to update product");
+        productId = editId;
+      } else {
+        // Create new product
+        const prodRes = await fetch("/api/products", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(product),
+        });
+        if (!prodRes.ok) throw new Error("Failed to create product");
+        const newProduct = await prodRes.json();
+        productId = newProduct.id;
       }
+
+      // Save all SKUs in parallel
+      await Promise.all(validSkus.map(sku =>
+        fetch("/api/skus", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...(sku.id ? { id: sku.id } : {}), productId, sku: sku.sku, barcode: sku.barcode || null, unit: sku.unit, mrp: sku.mrp, sellingPrice: sku.sellingPrice, costPrice: sku.costPrice, taxType: sku.taxType, taxRate: sku.taxRate }),
+        })
+      ));
 
       router.push("/superadmin/catalog");
     } catch (e: any) {
@@ -90,11 +131,13 @@ export default function NewProductPage() {
     }
   }
 
-  function handleProductImage(file: File | null) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setProduct({ ...product, imageUrl: String(reader.result) });
-    reader.readAsDataURL(file);
+  if (loadingEdit) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-3 text-muted-foreground">Loading product...</span>
+      </div>
+    );
   }
 
   return (
@@ -103,6 +146,7 @@ export default function NewProductPage() {
         <Link href="/superadmin/catalog" className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
+        <h1 className="text-xl font-bold">{isEdit ? "Edit Product" : "New Product"}</h1>
       </div>
 
       {error && (
@@ -122,7 +166,8 @@ export default function NewProductPage() {
           </div>
           <div className="md:col-span-2">
             <label className="text-sm font-medium block mb-1">Product Image</label>
-            <Input type="file" accept="image/*" onChange={e => handleProductImage(e.target.files?.[0] ?? null)} />
+            <Input type="file" accept="image/*" onChange={e => handleImageUpload(e.target.files?.[0] ?? null)} disabled={uploading} />
+            {uploading && <p className="text-xs text-muted-foreground mt-1">Uploading...</p>}
             {product.imageUrl && (
               <img src={product.imageUrl} alt="Product preview" className="mt-3 h-28 w-28 rounded-md border object-cover" />
             )}
@@ -240,9 +285,9 @@ export default function NewProductPage() {
         <Link href="/superadmin/catalog" className="w-full sm:w-auto">
           <Button className="w-full sm:w-auto" variant="outline">Cancel</Button>
         </Link>
-        <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving} size="lg">
-          {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-          {saving ? "Saving..." : "Save Product"}
+        <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || uploading} size="lg">
+          {(saving || uploading) ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+          {saving ? "Saving..." : uploading ? "Uploading..." : isEdit ? "Update Product" : "Save Product"}
         </Button>
       </div>
     </div>

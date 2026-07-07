@@ -16,7 +16,7 @@ export default function AdminCatalogPage() {
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [assignMsg, setAssignMsg] = useState('');
   const productsLive = useRealtimeList({ path: 'products', fallbackUrl: '/api/products' });
-  const skusLive = useRealtimeList({ path: 'skus', fallbackUrl: '/api/skus' });
+  const skusLive = useRealtimeList({ path: 'productSkus', fallbackUrl: '/api/skus' });
   const storesLive = useRealtimeList({ path: 'stores', fallbackUrl: '/api/stores?type=CUSTOMER', orderChild: 'type', equalValue: 'CUSTOMER' });
   const products = productsLive.data;
   const skus = skusLive.data;

@@ -19,6 +19,18 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = createSkuSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ message: "Invalid data", errors: parsed.error.flatten() }, { status: 400 });
+
+    // If id is provided, update existing SKU
+    if (body.id && typeof body.id === "string") {
+      const snap = await adminDb.ref("productSkus/" + body.id).once("value");
+      if (!snap.exists()) return NextResponse.json({ message: "SKU not found" }, { status: 404 });
+      const now = new Date().toISOString();
+      const updated = { ...snap.val(), ...parsed.data, updatedAt: now };
+      await adminDb.ref("productSkus/" + body.id).update(updated);
+      return NextResponse.json(updated);
+    }
+
+    // Create new SKU
     const id = uuidv4();
     const now = new Date().toISOString();
     const sku = { id, ...parsed.data, barcode: parsed.data.barcode ?? null, hsnCode: parsed.data.hsnCode ?? null, weightGrams: parsed.data.weightGrams ?? null, isActive: true, createdAt: now, updatedAt: now };

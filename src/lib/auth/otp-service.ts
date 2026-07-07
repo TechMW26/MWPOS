@@ -34,6 +34,15 @@ export async function createOtpChallenge(input: {
   return challenge;
 }
 
+export async function getChallenge(
+  challengeId: string
+): Promise<OtpChallenge | null> {
+  const ref = adminDb.ref(`otpChallenges/${challengeId}`);
+  const snapshot = await ref.get();
+  if (!snapshot.exists()) return null;
+  return snapshot.val() as OtpChallenge;
+}
+
 export async function verifyOtpChallenge(
   challengeId: string,
   code: string
