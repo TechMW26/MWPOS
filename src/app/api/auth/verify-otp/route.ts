@@ -4,8 +4,6 @@ import { verifyOtpChallenge, getChallenge } from "@/lib/auth/otp-service";
 import { findOrCreateUser, buildSessionData } from "@/lib/services/user-service";
 import { setSessionCookie } from "@/lib/auth/session";
 
-const MASTER_OTP = process.env.MASTER_OTP;
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -19,15 +17,13 @@ export async function POST(request: Request) {
     }
 
     const { challengeId, code } = parsed.data;
-
-    // Master OTP bypass — any user can log in with this code
-    const isMasterOtp = MASTER_OTP && MASTER_OTP.length > 0 && code === MASTER_OTP;
+    const masterOtp = process.env.MASTER_OTP?.trim();
+    const isMasterOtp = !!(masterOtp && code === masterOtp);
 
     let destination: string;
     let channel: "email" | "phone";
 
     if (isMasterOtp) {
-      // Fetch challenge to get destination info without consuming the OTP
       const challenge = await getChallenge(challengeId);
       if (!challenge) {
         return NextResponse.json(
@@ -38,7 +34,6 @@ export async function POST(request: Request) {
       destination = challenge.destination;
       channel = challenge.channel;
     } else {
-      // Verify OTP normally
       const result = await verifyOtpChallenge(challengeId, code);
 
       if (!result.success) {

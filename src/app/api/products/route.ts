@@ -50,3 +50,26 @@ export async function PUT(request: Request) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "Failed" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ message: "Product id required" }, { status: 400 });
+
+    // Delete all SKUs for this product
+    const skusSnap = await adminDb.ref("productSkus").orderByChild("productId").equalTo(id).once("value");
+    if (skusSnap.exists()) {
+      const updates: Record<string, null> = {};
+      Object.keys(skusSnap.val()).forEach(skuId => { updates["productSkus/" + skuId] = null; });
+      await adminDb.ref().update(updates);
+    }
+
+    await adminDb.ref("products/" + id).remove();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Failed" }, { status: 500 });
+  }
+}

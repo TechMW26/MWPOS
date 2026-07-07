@@ -1,13 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
-import { Users, Store, Package, ClipboardList, AlertTriangle, ArrowRight, Shield } from 'lucide-react';
-import { DistributionDonut, MetricBarChart, MiniTrend } from '@/components/dashboard/visuals';
+import { Users, Store, Package, ClipboardList, ArrowRight, Shield } from 'lucide-react';
+import { DistributionDonut } from '@/components/dashboard/visuals';
+import { CollapsibleSection, RevenueLineChart, OrderBarChart } from '@/components/dashboard/charts';
+import { DashboardSkeleton } from '@/components/ui/skeleton';
 import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 import { formatCurrency } from '@/lib/utils';
 
@@ -37,109 +39,118 @@ export default function SuperadminDashboard() {
           fetch('/api/inventory?storeId=store-dist-001').then(r => r.json()).catch(() => []),
           fetch('/api/audit-logs?limit=8').then(r => r.json()).catch(() => []),
         ]);
-
         const users = Array.isArray(usersRes) ? usersRes : [];
-        const stores = Array.isArray(storesRes) ? storesRes : [];
+        const storeList = Array.isArray(storesRes) ? storesRes : [];
         const products = Array.isArray(productsRes) ? productsRes : [];
         const inventory = Array.isArray(invRes) ? invRes : [];
-        const orderGroups = await Promise.all(stores.map((store: any) => fetch('/api/orders?storeId=' + store.id).then(r => r.json()).catch(() => [])));
+        const orderGroups = await Promise.all(storeList.map((store: any) => fetch('/api/orders?storeId=' + store.id).then(r => r.json()).catch(() => [])));
         const allOrders = orderGroups.flat().filter(Boolean);
         const revenue = allOrders.reduce((sum: number, order: any) => sum + (order.totalPaise || 0), 0);
         const khata = allOrders.filter((order: any) => order.paymentMode === 'PAY_LATER').reduce((sum: number, order: any) => sum + (order.totalPaise || 0), 0);
         const upfront = allOrders.filter((order: any) => order.paymentMode === 'UPFRONT').reduce((sum: number, order: any) => sum + (order.totalPaise || 0), 0);
         const lowStock = inventory.filter((i: any) => i.onHand <= (i.reorderThreshold || 10)).length;
         const pendingManagers = users.filter((u: any) => u.role === 'STORE_MANAGER' && u.approvalStatus === 'PENDING').length;
-
-        setStores(stores);
-        setOrders(allOrders);
-        setAuditLogs(Array.isArray(auditRes) ? auditRes : []);
-        setStats({ users: users.length, stores: stores.length, products: products.length, orders: allOrders.length, revenue, khata, upfront, lowStock, pendingManagers });
+        setStores(storeList); setOrders(allOrders); setAuditLogs(Array.isArray(auditRes) ? auditRes : []);
+        setStats({ users: users.length, stores: storeList.length, products: products.length, orders: allOrders.length, revenue, khata, upfront, lowStock, pendingManagers });
       } catch (e) { console.error(e); } finally { setLoading(false); }
     }
     load();
   }, []);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><p className="text-muted-foreground">Loading...</p></div>;
-  const visibleOrders = selectedStore === 'ALL' ? orders : orders.filter((order) => order.customerStoreId === selectedStore);
-  const customerStores = stores.filter((store) => store.type === 'CUSTOMER').length;
-  const distributionStores = stores.filter((store) => store.type === 'DISTRIBUTION').length;
-  const statusCounts = ['PENDING_OWNER_APPROVAL', 'SUBMITTED', 'APPROVED', 'SHIPPED', 'DELIVERED'].map(status => ({ label: status.replaceAll('_', ' '), value: visibleOrders.filter(order => order.status === status).length }));
-  const revenue = visibleOrders.reduce((s,o)=>s+(o.totalPaise||0),0);
-  const khataDue = visibleOrders.filter(o=>o.paymentMode==='PAY_LATER').reduce((s,o)=>s+(o.totalPaise||0),0);
-  const approvalQueue = visibleOrders.filter(o => o.status === 'PENDING_OWNER_APPROVAL').length;
-  const actionCards = [
-    { title: 'Approve managers', value: stats.pendingManagers, href: '/superadmin/store-managers', tone: stats.pendingManagers ? 'text-amber-700' : 'text-muted-foreground' },
-    { title: 'Clear owner approvals', value: approvalQueue, href: '/superadmin/orders', tone: approvalQueue ? 'text-amber-700' : 'text-muted-foreground' },
-    { title: 'Resolve low stock', value: stats.lowStock, href: '/superadmin/inventory', tone: stats.lowStock ? 'text-red-700' : 'text-muted-foreground' },
-    { title: 'Collect Khata', value: formatCurrency(khataDue), href: '/superadmin/orders', tone: khataDue ? 'text-amber-700' : 'text-muted-foreground' },
-  ];
+  const visibleOrders = selectedStore === 'ALL' ? orders : orders.filter((order: any) => order.customerStoreId === selectedStore);
+  const revenue = visibleOrders.reduce((s: number, o: any) => s + (o.totalPaise || 0), 0);
+  const khataDue = visibleOrders.filter((o: any) => o.paymentMode === 'PAY_LATER' && o.paymentStatus !== 'COMPLETED').reduce((s: number, o: any) => s + (o.totalPaise || 0), 0);
+
+  const revenueTrend = useMemo(() => {
+    const days: Record<string, number> = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      days[key] = 0;
+    }
+    visibleOrders.forEach((o: any) => {
+      const key = new Date(o.createdAt || '').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      if (key in days) days[key] = (days[key] || 0) + (o.totalPaise || 0) / 100;
+    });
+    return Object.entries(days).map(([label, value]) => ({ label, value }));
+  }, [visibleOrders]);
+
+  const statusCounts = ['PENDING_OWNER_APPROVAL', 'SUBMITTED', 'APPROVED', 'SHIPPED', 'DELIVERED'].map(s => ({
+    label: s.replace(/_/g, ' ').replace('PENDING OWNER', 'PENDING'),
+    value: visibleOrders.filter((o: any) => o.status === s).length,
+    color: s === 'DELIVERED' ? '#16a34a' : s === 'PENDING_OWNER_APPROVAL' ? '#f59e0b' : '#2563eb',
+  }));
+
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <DashboardTabs value={tab} onChange={setTab} tabs={[{ value: 'overview', label: 'Overview' }, { value: 'reports', label: 'Reports' }, { value: 'audit', label: 'Audit' }]} />
+        <DashboardTabs value={tab} onChange={setTab} tabs={[{ value: 'overview', label: 'Overview' }, { value: 'audit', label: 'Audit' }]} />
         <select className="flex h-10 rounded-md border px-3 py-2 text-sm" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-          <option value="ALL">Cumulative metrics</option>
-          {stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+          <option value="ALL">All Stores</option>
+          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
+
       {tab === 'overview' && <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {actionCards.map(card => (
-          <Link key={card.title} href={card.href} className="rounded-lg border bg-card p-3 shadow-sm animate-in hover-lift sm:p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs text-muted-foreground sm:text-sm">{card.title}</p>
-                <p className={`mt-1 truncate text-lg font-bold sm:text-2xl ${card.tone}`}>{card.value}</p>
+        <CollapsibleSection title="Revenue Trend (7 days)" defaultOpen={true}>
+          <RevenueLineChart data={revenueTrend} />
+        </CollapsibleSection>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            { label: 'Approve Managers', value: stats.pendingManagers, href: '/superadmin/store-managers', warn: stats.pendingManagers > 0 },
+            { label: 'Khata Due', value: formatCurrency(khataDue), href: '/superadmin/reports/khata', warn: khataDue > 0 },
+            { label: 'Low Stock SKUs', value: stats.lowStock, href: '/superadmin/inventory', warn: stats.lowStock > 0 },
+            { label: 'Revenue', value: formatCurrency(revenue), href: '/superadmin/reports/khata' },
+          ].map(card => (
+            <Link key={card.label} href={card.href} className="rounded-lg border bg-card p-3 shadow-sm hover:border-primary/30 transition-colors sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0"><p className="text-xs text-muted-foreground">{card.label}</p><p className={`mt-1 truncate text-lg font-bold ${card.warn ? 'text-amber-600' : ''}`}>{card.value}</p></div>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </div>
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
-            </div>
-          </Link>
-        ))}
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4">
-        <StatCard title="Total Users" value={stats.users} icon={<Users className="h-5 w-5" />} />
-        <StatCard title="Total Stores" value={stats.stores} icon={<Store className="h-5 w-5" />} />
-        <StatCard title="Products" value={stats.products} icon={<Package className="h-5 w-5" />} />
-        <StatCard title="Revenue Booked" value={formatCurrency(revenue)} icon={<ClipboardList className="h-5 w-5" />} />
-        <StatCard title="Khata Due" value={formatCurrency(khataDue)} />
-        <StatCard title="Upfront Pending" value={formatCurrency(visibleOrders.filter(o=>o.paymentMode==='UPFRONT').reduce((s,o)=>s+(o.totalPaise||0),0))} />
-        <StatCard title="Low Stock SKUs" value={stats.lowStock} icon={<AlertTriangle className="h-5 w-5" />} trend={stats.lowStock > 0 ? "down" : "neutral"} />
-        <StatCard title="Pending Managers" value={stats.pendingManagers} icon={<ClipboardList className="h-5 w-5" />} trend={stats.pendingManagers > 0 ? "up" : "neutral"} description={stats.pendingManagers > 0 ? "Awaiting approval" : "All approved"} />
-      </div>
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-        <DistributionDonut title="Store Distribution" data={[
-          { label: 'Customer', value: customerStores, color: '#2563eb' },
-          { label: 'Distribution', value: distributionStores, color: '#16a34a' },
-        ]} />
-        <MetricBarChart title="Order Status Volume" data={statusCounts} />
-        <MiniTrend title="Recent Order Volume" data={visibleOrders.slice(0, 7).reverse().map((order, index) => ({ label: `#${index + 1}`, value: order.totalPaise || 0 }))} />
-      </div>
-      </>}
-      {tab === 'reports' && (
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-          <DistributionDonut title="Payment Methods" data={[
-            { label: 'Khata', value: visibleOrders.filter(o=>o.paymentMode==='PAY_LATER').length, color: '#f59e0b' },
-            { label: 'Upfront', value: visibleOrders.filter(o=>o.paymentMode==='UPFRONT').length, color: '#2563eb' },
-          ]} />
-          <MetricBarChart title="Store Order Density" data={stores.slice(0, 8).map(store => ({ label: store.name, value: orders.filter(order => order.customerStoreId === store.id).length }))} />
-          <Card><CardHeader><CardTitle>Sales Summary</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Booked revenue</span><strong>{formatCurrency(revenue)}</strong></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Average order value</span><strong>{formatCurrency(visibleOrders.length ? revenue / visibleOrders.length : 0)}</strong></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Unpaid Khata</span><strong>{formatCurrency(khataDue)}</strong></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Approval queue</span><strong>{approvalQueue}</strong></div>
-          </CardContent></Card>
+            </Link>
+          ))}
         </div>
-      )}
+
+        <CollapsibleSection title="Order Status Distribution" defaultOpen={true}>
+          <OrderBarChart data={statusCounts} />
+        </CollapsibleSection>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+          <StatCard title="Total Users" value={stats.users} icon={<Users className="h-4 w-4" />} />
+          <StatCard title="Stores" value={stats.stores} icon={<Store className="h-4 w-4" />} />
+          <StatCard title="Products" value={stats.products} icon={<Package className="h-4 w-4" />} />
+          <StatCard title="Orders" value={stats.orders} icon={<ClipboardList className="h-4 w-4" />} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <DistributionDonut title="Store Types" data={[
+            { label: 'Customer', value: stores.filter((s: any) => s.type === 'CUSTOMER').length, color: '#2563eb' },
+            { label: 'Distribution', value: stores.filter((s: any) => s.type === 'DISTRIBUTION').length, color: '#16a34a' },
+          ]} />
+          <CollapsibleSection title="Quick Stats" defaultOpen={true}>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Revenue</span><strong>{formatCurrency(revenue)}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Avg Order</span><strong>{formatCurrency(visibleOrders.length ? revenue / visibleOrders.length : 0)}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Khata Unpaid</span><strong className="text-destructive">{formatCurrency(khataDue)}</strong></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pending Mgrs</span><strong>{stats.pendingManagers}</strong></div>
+            </div>
+          </CollapsibleSection>
+        </div>
+      </>}
+
       {tab === 'audit' && (
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><Shield className="h-5 w-5" />Recent Audit Activity</CardTitle></CardHeader>
           <CardContent>
             <DataTable data={auditLogs} columns={[
-              { key: 'action', header: 'Action', render: (l:any) => <Badge variant="outline">{actionLabels[l.action] || l.action}</Badge> },
-              { key: 'entityType', header: 'Entity', render: (l:any) => String(l.entityType || '-') },
-              { key: 'actorId', header: 'Actor', render: (l:any) => <span className="font-mono text-xs">{String(l.actorId || '').slice(0, 10)}</span> },
-              { key: 'createdAt', header: 'Time', render: (l:any) => new Date(l.createdAt).toLocaleString() },
+              { key: 'action', header: 'Action', render: (l: any) => <Badge variant="outline">{actionLabels[l.action] || l.action}</Badge> },
+              { key: 'entityType', header: 'Entity', render: (l: any) => String(l.entityType || '-') },
+              { key: 'actorId', header: 'Actor', render: (l: any) => <span className="font-mono text-xs">{String(l.actorId || '').slice(0, 10)}</span> },
+              { key: 'createdAt', header: 'Time', render: (l: any) => new Date(l.createdAt).toLocaleString() },
             ]} emptyMessage="No audit activity yet." />
           </CardContent>
         </Card>

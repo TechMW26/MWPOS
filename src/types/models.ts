@@ -46,6 +46,7 @@ export interface Store {
   name: string;
   type: StoreType;
   ownerUid: string | null;
+  managerUid: string | null;
   logoUrl: string | null;
   address: string;
   city: string;

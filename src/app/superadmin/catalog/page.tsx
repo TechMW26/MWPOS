@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus, Search, Package, Loader2, ExternalLink } from 'lucide-react';
+import { Plus, Search, Package, Loader2, ExternalLink, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
@@ -28,6 +28,12 @@ export default function CatalogPage() {
 
   function getSkusForProduct(productId: string) {
     return skus.filter((s: any) => s.productId === productId);
+  }
+
+  async function handleDelete(productId: string) {
+    if (!confirm('Delete this product and all its SKUs?')) return;
+    await fetch('/api/products?id=' + productId, { method: 'DELETE' });
+    // Refresh will happen via realtime subscription
   }
 
   if (loading) return (
@@ -76,6 +82,7 @@ export default function CatalogPage() {
                     <div className="flex items-center gap-3">
                       <div className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{productSkus.length}</span> SKU{productSkus.length !== 1 ? 's' : ''}</div>
                       <Link href={`/superadmin/catalog/new?edit=${product.id}`} onClick={e => e.stopPropagation()}><Button variant="outline" size="sm"><ExternalLink className="h-3 w-3 mr-1" />Edit</Button></Link>
+                      <Button variant="outline" size="sm" className="text-destructive" onClick={e => { e.stopPropagation(); handleDelete(product.id); }}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                   </div>
                 </CardHeader>

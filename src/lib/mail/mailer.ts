@@ -1,39 +1,36 @@
 import nodemailer, { type Transporter } from "nodemailer";
 
-// ─── Cached Transporter (singleton pattern from algaetree-ai) ─
-
-let cachedTransporter: Transporter | null = null;
-let transporterReady = false;
+// ─── Transporter Factory ─────────────────────────────────────
 
 async function getTransporter(): Promise<Transporter | null> {
-  if (cachedTransporter && transporterReady) return cachedTransporter;
-
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
-  if (!host || !user || !pass) return null;
+  if (!host || !user || !pass) {
+    console.warn("[SMTP] Not configured — emails will be logged to console only");
+    return null;
+  }
 
-  cachedTransporter = nodemailer.createTransport({
+  // Always create a fresh transporter to avoid stale connections
+  const transporter = nodemailer.createTransport({
     host,
     port: Number(process.env.SMTP_PORT ?? 587),
     secure: process.env.SMTP_SECURE === "true",
     auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
   });
 
   try {
-    await cachedTransporter.verify();
-    transporterReady = true;
+    await transporter.verify();
     console.info(`[SMTP] Connected to ${host} as ${user}`);
-  } catch {
-    cachedTransporter = null;
-    transporterReady = false;
-    throw new Error(
-      `SMTP connection failed for ${user}@${host}. Check SMTP_USER / SMTP_PASS in your .env`,
-    );
+    return transporter;
+  } catch (err) {
+    console.error(`[SMTP] Connection failed for ${user}@${host}:`, err instanceof Error ? err.message : err);
+    return null;
   }
-
-  return cachedTransporter;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -60,18 +57,12 @@ function wrapHtml(title: string, body: string): string {
 
 // ─── Public API ──────────────────────────────────────────────
 
-/** Deliver a login OTP by email. Falls back to console log when SMTP is not configured. */
+/** Deliver a login OTP by email. Falls back to console log when SMTP is not configured or fails. */
 export async function sendOtpEmail(to: string, otp: string): Promise<void> {
-  let transporter: Transporter | null;
-  try {
-    transporter = await getTransporter();
-  } catch (err) {
-    console.error(`[OTP] Failed to send code to ${to}:`, err instanceof Error ? err.message : err);
-    throw err;
-  }
+  const transporter = await getTransporter();
 
   if (!transporter) {
-    console.info(`[OTP] (no SMTP configured) Code for ${to}: ${otp}`);
+    console.log(`\n📧 [OTP] Code for ${to}: ${otp} (SMTP not available)\n`);
     return;
   }
 
@@ -93,7 +84,7 @@ export async function sendOtpEmail(to: string, otp: string): Promise<void> {
     console.info(`[OTP] Code sent to ${to}`);
   } catch (err) {
     console.error(`[OTP] Failed to send email to ${to}:`, err instanceof Error ? err.message : err);
-    throw new Error(`Failed to send OTP email to ${to}. The SMTP server rejected the request.`);
+    console.log(`\n📧 [OTP] FALLBACK — Code for ${to}: ${otp}\n`);
   }
 }
 

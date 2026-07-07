@@ -115,6 +115,45 @@ export async function buildSessionData(user: User): Promise<SessionData> {
   };
 }
 
+// ─── Create User (admin-initiated) ───────────────────────────
+
+export async function createUser(input: {
+  email: string | null;
+  phone: string | null;
+  displayName: string;
+  role: string;
+}): Promise<User> {
+  const uid = uuidv4();
+  const now = new Date().toISOString();
+
+  // Check for existing user
+  if (input.email) {
+    const snap = await adminDb.ref("users").orderByChild("email").equalTo(input.email.toLowerCase().trim()).once("value");
+    if (snap.exists()) throw new Error("A user with this email already exists");
+  }
+  if (input.phone) {
+    const snap = await adminDb.ref("users").orderByChild("phone").equalTo(input.phone.trim()).once("value");
+    if (snap.exists()) throw new Error("A user with this phone already exists");
+  }
+
+  const newUser: User = {
+    uid,
+    email: input.email?.toLowerCase().trim() ?? null,
+    phone: input.phone?.trim() ?? null,
+    displayName: input.displayName.trim(),
+    role: input.role as UserRole,
+    approvalStatus: input.role === "STORE_MANAGER" ? "PENDING" : null,
+    isActive: true,
+    avatarUrl: null,
+    createdAt: now,
+    updatedAt: now,
+    lastLoginAt: null,
+  };
+
+  await adminDb.ref(`users/${uid}`).set(newUser);
+  return newUser;
+}
+
 // ─── Update User Role ────────────────────────────────────────
 
 export async function updateUserRole(

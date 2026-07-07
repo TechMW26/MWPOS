@@ -42,13 +42,21 @@ export class EmailOtpProvider implements OtpProvider {
     code: string;
     challengeId: string;
   }): Promise<void> {
-    if (input.channel !== "email") {
-      throw new Error("EmailOtpProvider only supports email channel");
+    if (input.channel === "phone") {
+      // Phone not supported by email provider — log to console
+      console.log(`[OTP] Phone OTP for ${input.destination}: ${input.code}`);
+      return;
     }
 
-    // Use the shared mailer with cached transporter
-    const { sendOtpEmail } = await import("../mail/mailer");
-    await sendOtpEmail(input.destination, input.code);
+    try {
+      const { sendOtpEmail } = await import("../mail/mailer");
+      await sendOtpEmail(input.destination, input.code);
+    } catch (err) {
+      // Log the code as fallback so the user can still log in
+      console.error(`[OTP] Email send failed for ${input.destination}:`, err instanceof Error ? err.message : err);
+      console.log(`[OTP] FALLBACK — Code for ${input.destination}: ${input.code}`);
+      // Don't throw — challenge was already created, user can use master OTP
+    }
   }
 }
 

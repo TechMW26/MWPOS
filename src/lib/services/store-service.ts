@@ -39,11 +39,15 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
         })
       : null;
 
+  const isAdminCreator = session.role === "ADMIN" || session.role === "SUPERADMIN";
+  const autoApproved = input.type === "DISTRIBUTION" || isAdminCreator;
+
   const store: Store = {
     id: storeId,
     name: input.name,
     type: input.type,
     ownerUid: owner?.uid ?? null,
+    managerUid: null,
     logoUrl: input.logoUrl ?? null,
     address: input.address,
     city: input.city,
@@ -52,7 +56,7 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
     phone: input.phone,
     email: input.email ?? owner?.email ?? null,
     gstin: input.gstin ?? null,
-    approvalStatus: input.type === "DISTRIBUTION" ? "APPROVED" : "PENDING",
+    approvalStatus: autoApproved ? "APPROVED" : "PENDING",
     isActive: true,
     createdBy: session.uid,
     createdAt: now,

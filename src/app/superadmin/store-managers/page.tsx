@@ -6,12 +6,15 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Check, X, UserPlus, Loader2 } from 'lucide-react';
+import { Check, X, UserPlus, Loader2, ExternalLink } from 'lucide-react';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import Link from 'next/link';
 
 export default function StoreManagersPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState('');
+  const [addPhone, setAddPhone] = useState('');
+  const [addName, setAddName] = useState('');
   const [adding, setAdding] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const { data: liveManagers, loading, error, live } = useRealtimeList({
@@ -23,25 +26,25 @@ export default function StoreManagersPage() {
   const managers = liveManagers;
 
   async function handleAdd(e: React.FormEvent) {
-    e.preventDefault(); setAdding(true); setActionMsg('');
+    e.preventDefault();
+    if (!addEmail && !addPhone) { setActionMsg('Email or phone required'); return; }
+    setAdding(true); setActionMsg('');
     try {
-      const otpRes = await fetch('/api/auth/request-otp', {
+      const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: 'email', destination: addEmail }),
+        body: JSON.stringify({
+          email: addEmail || null,
+          phone: addPhone || null,
+          displayName: addName || addEmail || addPhone,
+          role: 'STORE_MANAGER',
+        }),
       });
-      if (!otpRes.ok) throw new Error('Failed');
-      await new Promise(r => setTimeout(r, 800));
-      const usersRes = await fetch('/api/users');
-      const all = await usersRes.json();
-      const newUser = (Array.isArray(all) ? all : []).find((u: any) => u.email === addEmail);
-      if (newUser) {
-        await fetch('/api/users', {
-          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ uid: newUser.uid, role: 'STORE_MANAGER' }),
-        });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || 'Failed');
       }
-      setActionMsg('Store manager created: ' + addEmail);
-      setShowAdd(false); setAddEmail('');
+      setActionMsg('Store manager created');
+      setShowAdd(false); setAddEmail(''); setAddPhone(''); setAddName('');
     } catch (e: any) { setActionMsg('Error: ' + (e.message || 'Failed')); }
     finally { setAdding(false); }
   }
@@ -83,11 +86,21 @@ export default function StoreManagersPage() {
             <form onSubmit={handleAdd} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Email Address</label>
-                <Input type="email" placeholder="manager@example.com" required value={addEmail}
+                <Input type="email" placeholder="manager@example.com" value={addEmail}
                   onChange={e => setAddEmail(e.target.value)} />
-                <p className="text-xs text-muted-foreground mt-1">New manager will need OTP verification on first login. Requires superadmin approval after creation.</p>
               </div>
-              <Button className="w-full sm:w-auto" type="submit" disabled={adding || !addEmail}>
+              <div>
+                <label className="text-sm font-medium block mb-1">Phone (optional)</label>
+                <Input type="tel" placeholder="+91..." value={addPhone}
+                  onChange={e => setAddPhone(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">Display Name</label>
+                <Input placeholder="John Doe" value={addName}
+                  onChange={e => setAddName(e.target.value)} />
+              </div>
+              <p className="text-xs text-muted-foreground">New manager will need superadmin approval after creation.</p>
+              <Button className="w-full sm:w-auto" type="submit" disabled={adding || (!addEmail && !addPhone)}>
                 {adding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {adding ? 'Creating...' : 'Create Store Manager'}
               </Button>
@@ -131,7 +144,12 @@ export default function StoreManagersPage() {
             <CardHeader><CardTitle>All Managers ({managers.length})</CardTitle></CardHeader>
             <CardContent>
               <DataTable data={managers} columns={[
-                { key: 'email', header: 'Email' },
+                { key: 'displayName', header: 'Name', render: (m) => (
+                  <Link href={`/superadmin/store-managers/${m.uid}`} className="text-blue-600 hover:underline font-medium flex items-center gap-1">
+                    {m.displayName || m.email || m.phone} <ExternalLink className="h-3 w-3" />
+                  </Link>
+                )},
+                { key: 'email', header: 'Email/Phone', render: (m) => m.email || m.phone || '—' },
                 { key: 'approvalStatus', header: 'Status', render: (m) => {
                   const s = m.approvalStatus;
                   return <Badge variant={s === 'APPROVED' ? 'success' : s === 'REJECTED' ? 'destructive' : 'warning'}>{s || 'N/A'}</Badge>;

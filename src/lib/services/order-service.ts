@@ -230,7 +230,38 @@ export async function createOrder(input: CreateOrderInput, _session: SessionData
 
   await adminDb.ref().update(updates);
 
+  // Send notification emails
+  try {
+    const { sendNotificationEmail } = await import("@/lib/mail/mailer");
+
+    // Notify store owner
+    if (customerStore?.email) {
+      await sendNotificationEmail({ to: customerStore.email, subject: `New Order #${orderId.slice(0, 8)}`, title: 'New Order Placed', message: `A new order of ${formatAmount(totalPaise)} has been placed for ${customerStore.name}. View it at ${process.env.NEXT_PUBLIC_APP_URL || ''}/storefront/orders` });
+    }
+    // Notify store manager
+    if (customerStore?.managerUid) {
+      const mgrSnap = await adminDb.ref(`users/${customerStore.managerUid}`).get();
+      if (mgrSnap.exists() && mgrSnap.val().email) {
+        await sendNotificationEmail({ to: mgrSnap.val().email, subject: `New Order #${orderId.slice(0, 8)}`, title: 'New Order Placed', message: `A new order of ${formatAmount(totalPaise)} has been placed for ${customerStore.name}. View it at ${process.env.NEXT_PUBLIC_APP_URL || ''}/manager/orders` });
+      }
+    }
+    // Notify admin
+    const adminSnap = await adminDb.ref("users").orderByChild("role").equalTo("ADMIN").once("value");
+    if (adminSnap.exists()) {
+      const admins = Object.values(adminSnap.val() as Record<string, any>);
+      for (const admin of admins) {
+        if (admin.email) {
+          await sendNotificationEmail({ to: admin.email, subject: `New Order #${orderId.slice(0, 8)}`, title: 'New Order Placed', message: `Order of ${formatAmount(totalPaise)} placed for ${customerStore?.name || input.customerStoreId}. Payment: ${paymentMode === 'PAY_LATER' ? 'Khata' : 'Upfront'}` });
+        }
+      }
+    }
+  } catch (e) { console.error('[Order] Notification email failed:', e); }
+
   return { orderId, status: initialOrderStatus };
+}
+
+function formatAmount(paise: number): string {
+  return '₹' + (paise / 100).toLocaleString('en-IN');
 }
 
 // ─── Submit Order ────────────────────────────────────────────

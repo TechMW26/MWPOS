@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Trash2, Save, Loader2, Package } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, Loader2, Package, Barcode } from "lucide-react";
 import Link from "next/link";
 
 interface SkuForm {
@@ -71,6 +71,16 @@ function NewProductForm() {
     setSkus(skus.map(s => s.key === key ? { ...s, [field]: value } : s));
   }
   function removeSku(key: string) { if (skus.length <= 1) return; setSkus(skus.filter(s => s.key !== key)); }
+
+  function generateBarcode(key: string) {
+    // Generate a random 13-digit barcode
+    const digits = Array.from({ length: 12 }, () => Math.floor(Math.random() * 10));
+    let sum = 0;
+    digits.forEach((d, i) => { sum += i % 2 === 0 ? d : d * 3; });
+    const check = (10 - (sum % 10)) % 10;
+    const barcode = [...digits, check].join('');
+    updateSku(key, "barcode", barcode);
+  }
 
   async function handleImageUpload(file: File | null) {
     if (!file) return;
@@ -228,8 +238,13 @@ function NewProductForm() {
                 </div>
                 <div>
                   <label className="text-xs font-medium block mb-1">Barcode</label>
-                  <Input placeholder="e.g. 8901001001001" value={sku.barcode}
-                    onChange={e => updateSku(sku.key, "barcode", e.target.value)} />
+                  <div className="flex gap-1">
+                    <Input placeholder="e.g. 8901001001001" value={sku.barcode}
+                      onChange={e => updateSku(sku.key, "barcode", e.target.value)} className="flex-1" />
+                    <Button type="button" variant="outline" size="sm" className="h-10 w-10 p-0" title="Generate barcode" onClick={() => generateBarcode(sku.key)}>
+                      <Barcode className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-medium block mb-1">Unit</label>

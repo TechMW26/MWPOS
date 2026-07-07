@@ -5,7 +5,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Plus } from 'lucide-react';
+import { Plus, Check, X } from 'lucide-react';
 
 export default function CustomerStoresPage() {
   const [stores, setStores] = useState<any[]>([]);
@@ -27,6 +27,11 @@ export default function CustomerStoresPage() {
     e.preventDefault();
     await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(form) });
     setShowForm(false); load();
+  }
+
+  async function handleApproval(storeId: string, approvalStatus: 'APPROVED' | 'REJECTED') {
+    await fetch('/api/stores', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ storeId, approvalStatus }) });
+    load();
   }
 
   function handleLogo(file: File | null) {
@@ -76,10 +81,18 @@ export default function CustomerStoresPage() {
       )}
       <Card><CardHeader><CardTitle>All Customer Stores ({stores.length})</CardTitle></CardHeader><CardContent>
         <DataTable data={stores} columns={[
-          { key: 'logoUrl', header: 'Logo', render: (s) => s.logoUrl ? <img src={s.logoUrl} alt={s.name} className="h-9 w-9 rounded-md object-cover" /> : <span className="text-xs text-muted-foreground">—</span> },
           { key: 'name', header: 'Name' }, { key: 'city', header: 'City' }, { key: 'phone', header: 'Phone' },
-          { key: 'ownerUid', header: 'Owner', render: (s) => s.ownerUid || <span className="text-xs text-muted-foreground">Unmapped</span> },
-          { key: 'approvalStatus', header: 'Status', render: (s) => <Badge variant={s.approvalStatus === 'APPROVED' ? 'success' : 'warning'}>{s.approvalStatus}</Badge> },
+          { key: 'ownerUid', header: 'Owner', render: (s) => {
+            const owner = customers.find((u: any) => u.uid === s.ownerUid);
+            return owner ? (owner.displayName || owner.email || owner.phone) : <span className="text-xs text-muted-foreground">—</span>;
+          }},
+          { key: 'approvalStatus', header: 'Status', render: (s) => <Badge variant={s.approvalStatus === 'APPROVED' ? 'success' : s.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>{s.approvalStatus}</Badge> },
+          { key: 'actions', header: 'Actions', render: (s) => s.approvalStatus === 'PENDING' ? (
+            <div className="flex gap-1">
+              <Button size="sm" variant="outline" className="text-green-600 h-8 px-2" onClick={() => handleApproval(s.id, 'APPROVED')}><Check className="h-3 w-3" /></Button>
+              <Button size="sm" variant="outline" className="text-red-600 h-8 px-2" onClick={() => handleApproval(s.id, 'REJECTED')}><X className="h-3 w-3" /></Button>
+            </div>
+          ) : null },
         ]} />
       </CardContent></Card>
     </div>

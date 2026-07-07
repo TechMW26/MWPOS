@@ -1,7 +1,7 @@
 "use client";
 
 import { AppShell, type AppNavItem } from "@/components/app-shell";
-import { LayoutDashboard, Warehouse, Boxes, ClipboardCheck, ReceiptText } from "lucide-react";
+import { LayoutDashboard, Warehouse, Boxes, ClipboardCheck, ReceiptText, BookOpen } from "lucide-react";
 
 const adminNav: AppNavItem[] = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -9,6 +9,7 @@ const adminNav: AppNavItem[] = [
   { href: "/admin/catalog", label: "Catalog", icon: Boxes },
   { href: "/admin/inventory", label: "Inventory", icon: ClipboardCheck },
   { href: "/admin/orders", label: "Orders", icon: ReceiptText },
+  { href: "/admin/reports/khata", label: "Khata Book", icon: BookOpen },
 ];
 
 const adminBottomNav = [

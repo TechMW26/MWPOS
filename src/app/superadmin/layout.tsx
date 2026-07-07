@@ -10,6 +10,7 @@ import {
   Settings,
   ShieldCheck,
   ReceiptText,
+  BookOpen,
 } from "lucide-react";
 
 const superadminNav: AppNavItem[] = [
@@ -20,6 +21,7 @@ const superadminNav: AppNavItem[] = [
   { href: "/superadmin/catalog", label: "Catalog", icon: Boxes },
   { href: "/superadmin/inventory", label: "Inventory", icon: ClipboardCheck },
   { href: "/superadmin/orders", label: "Orders", icon: ReceiptText },
+  { href: "/superadmin/reports/khata", label: "Khata Book", icon: BookOpen },
   { href: "/superadmin/settings", label: "Settings", icon: Settings },
 ];
 
