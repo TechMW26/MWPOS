@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 221 83% 45%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 32% 93%;
+    --muted-foreground: 215 16% 43%;
+    --accent: 213 94% 94%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 86%;
+    --input: 214 32% 86%;
+    --ring: 221 83% 45%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    * {
+      scroll-behavior: smooth;
+    }
+  }
+  ::selection {
+    @apply bg-primary text-primary-foreground;
+  }
+  input,
+  select,
+  textarea,
+  button {
+    @apply touch-manipulation;
+  }
+  h1 {
+    @apply tracking-tight;
+  }
+}
+
+@layer utilities {
+  .animate-in {
+    animation: mx-fade-up 180ms ease-out both;
+  }
+  .animate-drawer-right {
+    animation: mx-drawer-right 220ms ease-out both;
+  }
+  .animate-drawer-right-out {
+    animation: mx-drawer-right-out 180ms ease-in both;
+  }
+  .animate-overlay {
+    animation: mx-fade 180ms ease-out both;
+  }
+  .animate-overlay-out {
+    animation: mx-fade-out 180ms ease-in both;
+  }
+  .animate-sheet-up {
+    animation: mx-sheet-up 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .hover-lift {
+    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md;
+  }
+  @keyframes mx-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes mx-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes mx-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes mx-drawer-right {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes mx-drawer-right-out {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+  @keyframes mx-sheet-up {
+    from {
+      opacity: 0;
+      transform: translateY(24px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "/superadmin/dashboard/page": "app/superadmin/dashboard/page.js",
+  "/superadmin/users/page": "app/superadmin/users/page.js",
+  "/superadmin/orders/page": "app/superadmin/orders/page.js"
+}
