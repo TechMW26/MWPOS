@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ function emptySku(): SkuForm {
   return { key: crypto.randomUUID(), sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5 };
 }
 
-export default function NewProductPage() {
+function NewProductForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
@@ -291,5 +291,17 @@ export default function NewProductPage() {
         </Button>
       </div>
     </div>
+  );
+}
+
+export default function NewProductPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <NewProductForm />
+    </Suspense>
   );
 }
