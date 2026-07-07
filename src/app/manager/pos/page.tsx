@@ -1,35 +1,40 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { QuantityControl } from '@/components/ui/quantity-control';
 import { formatCurrency } from '@/lib/utils';
-import { ShoppingCart, Plus, Minus, Trash2 } from 'lucide-react';
+import { useToast } from '@/lib/hooks/use-toast';
+import { ShoppingCart, Trash2 } from 'lucide-react';
 
 interface CartItem { skuId: string; productId: string; productName: string; sku: string; quantity: number; unitPrice: number; taxRate: number; imageUrl?: string | null; }
 
 export default function POSPage() {
+  const router = useRouter();
   const [skus, setSkus] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
+  const [distributors, setDistributors] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [search, setSearch] = useState('');
-  const [selectedStore, setSelectedStore] = useState('');
+  const [selectedDistributor, setSelectedDistributor] = useState('');
   const [paymentMode, setPaymentMode] = useState<'PAY_LATER' | 'UPFRONT'>('PAY_LATER');
   const [loading, setLoading] = useState(true);
+  const { addToast } = useToast();
 
   useEffect(() => {
     Promise.all([
       fetch('/api/skus').then(r => r.json()),
       fetch('/api/products').then(r => r.json()),
-      fetch('/api/stores?type=CUSTOMER').then(r => r.json()),
-    ]).then(([s, p, st]) => {
+      fetch('/api/distributors').then(r => r.json()),
+    ]).then(([s, p, d]) => {
       setSkus(Array.isArray(s) ? s : []);
       setProducts(Array.isArray(p) ? p : []);
-      const storeList = Array.isArray(st) ? st : [];
-      setStores(storeList);
-      setSelectedStore(storeList[0]?.id ?? '');
+      const dList = Array.isArray(d) ? d : [];
+      setDistributors(dList);
+      setSelectedDistributor(dList[0]?.id ?? '');
       setLoading(false);
     });
   }, []);
@@ -44,6 +49,8 @@ export default function POSPage() {
       const prod = products.find(p => p.id === sku.productId);
       setCart([...cart, { skuId: sku.id, productId: sku.productId, productName: prod?.name || sku.sku, sku: sku.sku, quantity: 1, unitPrice: sku.sellingPrice, taxRate: sku.taxRate, imageUrl: prod?.imageUrl ?? null }]);
     }
+    const prod = products.find(p => p.id === sku.productId);
+    addToast({ title: 'Added to cart', message: `${prod?.name || sku.sku} is now in your cart.`, type: 'success' });
   }
 
   function removeFromCart(skuId: string) { setCart(cart.filter(c => c.skuId !== skuId)); }
@@ -57,15 +64,19 @@ export default function POSPage() {
   const total = subtotal + taxTotal;
 
   async function placeOrder() {
-    if (cart.length === 0 || !selectedStore) return;
+    if (cart.length === 0) return;
+    if (!selectedDistributor) {
+      addToast({ title: 'Select distributor', message: 'Choose a distributor before placing the order.', type: 'error' });
+      return;
+    }
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        customerStoreId: selectedStore,
+        distributorId: selectedDistributor,
         paymentMode,
         items: cart.map(item => ({ skuId: item.skuId, productId: item.productId, quantity: item.quantity })),
-        notes: 'Placed by store manager',
+        notes: 'Placed by ASM',
         idempotencyKey: crypto.randomUUID(),
       }),
     });
@@ -74,13 +85,18 @@ export default function POSPage() {
       alert(data.message || 'Failed to place order');
       return;
     }
-    alert(data.status === 'PENDING_OWNER_APPROVAL'
-      ? 'Order created and sent to store owner for OTP/app approval.'
-      : 'Order created.');
+    addToast({
+      title: 'Order placed',
+      message: data.otpCode ? `OTP sent to distributor. OTP: ${data.otpCode} (valid 24h)` : 'Order created successfully.',
+      type: 'success',
+    });
     setCart([]);
+    const orderId = data.orderId || data.id;
+    if (paymentMode === 'PAY_LATER' && orderId) router.push(`/manager/orders/${orderId}`);
   }
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (distributors.length === 0) return <div className="p-6"><Card className="p-4 text-center"><p className="text-muted-foreground">No distributors available. Create distributors first to place orders.</p></Card></div>;
 
   return (
     <div className="space-y-6">
@@ -88,9 +104,9 @@ export default function POSPage() {
         {/* Product Grid */}
         <div className="lg:col-span-2 space-y-4">
           <div>
-            <label className="text-sm font-medium block mb-1">Ordering for store</label>
-            <select className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base sm:h-10 sm:text-sm" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-              {stores.map(store => <option key={store.id} value={store.id}>{store.name}</option>)}
+            <label className="text-sm font-medium block mb-1">Ordering for distributor</label>
+            <select className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base sm:h-10 sm:text-sm" value={selectedDistributor} onChange={e => setSelectedDistributor(e.target.value)}>
+              {distributors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </div>
           <Input placeholder="Search SKU or barcode..." value={search} onChange={e => setSearch(e.target.value)} autoFocus />
@@ -120,11 +136,9 @@ export default function POSPage() {
                     <p className="text-sm font-medium truncate">{item.productName}</p>
                     <p className="text-xs text-muted-foreground">{item.sku} — {formatCurrency(item.unitPrice)}</p>
                   </div>
-                  <div className="flex items-center gap-1 ml-2">
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.skuId, item.quantity - 1)}><Minus className="h-3 w-3"/></Button>
-                    <span className="text-sm w-6 text-center">{item.quantity}</span>
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.skuId, item.quantity + 1)}><Plus className="h-3 w-3"/></Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3"/></Button>
+                  <div className="ml-2 flex flex-col items-end gap-1">
+                    <QuantityControl value={item.quantity} onChange={(quantity) => updateQty(item.skuId, quantity)} />
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3 mr-1"/>Remove</Button>
                   </div>
                 </div>
               ))}
@@ -141,7 +155,7 @@ export default function POSPage() {
                 <Button type="button" variant={paymentMode === 'PAY_LATER' ? 'default' : 'outline'} onClick={() => setPaymentMode('PAY_LATER')}>Khata</Button>
                 <Button type="button" variant={paymentMode === 'UPFRONT' ? 'default' : 'outline'} onClick={() => setPaymentMode('UPFRONT')}>Pay upfront</Button>
               </div>
-              <Button className="w-full" size="lg" onClick={placeOrder} disabled={cart.length === 0 || !selectedStore}>Place Order — {formatCurrency(total)}</Button>
+              <Button className="w-full" size="lg" onClick={placeOrder} disabled={cart.length === 0 || !selectedDistributor}>Place Order — {formatCurrency(total)}</Button>
             </CardContent>
           </Card>
         </div>

@@ -4,14 +4,14 @@ import { requireRole } from "@/lib/auth/authorization";
 import { listStores, createStore, updateStore } from "@/lib/services/store-service";
 import { createStoreSchema } from "@/lib/validation/schemas";
 import { adminDb } from "@/lib/db/admin";
-import type { UserStoreMembership } from "@/types/models";
+import type { UserDistributorMembership } from "@/types/models";
 
 export async function GET(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get("type") as "DISTRIBUTION" | "CUSTOMER" | null;
+  const type = searchParams.get("type") as "DISTRIBUTION" | "DISTRIBUTOR" | null;
   const mine = searchParams.get("mine") === "1";
 
   const stores = await listStores(type ?? undefined);
@@ -59,7 +59,7 @@ export async function PATCH(request: Request) {
 
     // Clean allowed fields
     const allowed: Record<string, unknown> = {};
-    const editableFields = ["name", "address", "city", "state", "pincode", "phone", "email", "gstin", "ownerUid", "managerUid", "approvalStatus", "isActive"];
+    const editableFields = ["name", "districtId", "address", "city", "state", "pincode", "phone", "email", "gstin", "ownerUid", "managerUid", "approvalStatus", "isActive"];
     for (const key of editableFields) {
       if (key in updates) allowed[key] = updates[key];
     }
@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
       // Add new manager membership
       if (updates.managerUid && typeof updates.managerUid === "string") {
         const now = new Date().toISOString();
-        const membership: UserStoreMembership = { uid: updates.managerUid, storeId, role: "MANAGER", joinedAt: now };
+        const membership = { uid: updates.managerUid, storeId, role: "MANAGER", joinedAt: now };
         await adminDb.ref("storeMembers/" + storeId + "/" + updates.managerUid).set(membership);
         await adminDb.ref("userStoreMemberships/" + updates.managerUid + "/" + storeId).set(membership);
       }
@@ -108,6 +108,7 @@ export async function DELETE(request: Request) {
     if (!storeId) return NextResponse.json({ message: "storeId required" }, { status: 400 });
 
     await adminDb.ref("stores/" + storeId).remove();
+    await adminDb.ref("distributors/" + storeId).remove();
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "Failed" }, { status: 500 });

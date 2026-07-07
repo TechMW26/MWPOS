@@ -19,8 +19,9 @@ const PUBLIC_PATHS = [
 const ROLE_PATH_PREFIXES: Record<UserRole, string> = {
   SUPERADMIN: '/superadmin',
   ADMIN: '/admin',
-  STORE_MANAGER: '/manager',
-  CUSTOMER: '/storefront'
+  ASM: '/asm',
+  C_AND_F: '/cf',
+  DISTRIBUTOR: '/storefront'
 }
 
 export async function middleware (request: NextRequest) {
@@ -62,15 +63,13 @@ export async function middleware (request: NextRequest) {
       return NextResponse.redirect(new URL(redirectPath, request.url))
     }
 
-    // For store managers, check approval status
+    // For ASM users, check approval status
     if (
-      session.role === 'STORE_MANAGER' &&
-      session.approvalStatus !== 'APPROVED'
+      session.role === 'ASM' &&
+      session.approvalStatus !== 'APPROVED' &&
+      pathname !== '/asm/dashboard'
     ) {
-      // Check if trying to create customer stores (allowed only when approved)
-      if (pathname.includes('/customer-stores')) {
-        return NextResponse.redirect(new URL('/manager/dashboard', request.url))
-      }
+      return NextResponse.redirect(new URL('/asm/dashboard', request.url))
     }
 
     return NextResponse.next()
@@ -91,9 +90,13 @@ function getRedirectForRole (role: UserRole): string {
       return '/superadmin/dashboard'
     case 'ADMIN':
       return '/admin/dashboard'
-    case 'STORE_MANAGER':
-      return '/manager/dashboard'
-    case 'CUSTOMER':
+    case 'ASM':
+      return '/asm/dashboard'
+    case 'C_AND_F':
+      return '/cf/dashboard'
+    case 'DISTRIBUTOR':
+      return '/storefront/dashboard'
+    default:
       return '/storefront/catalog'
   }
 }

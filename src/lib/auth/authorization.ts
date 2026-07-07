@@ -14,23 +14,24 @@ export function requireRole(session: SessionData, ...roles: UserRole[]): void {
   }
 }
 
-export function requireStoreAccess(session: SessionData, storeId: string): void {
-  // SUPERADMIN and ADMIN have access to all stores
+export function requireDistrictAccess(session: SessionData, districtId: string): void {
   if (session.role === "SUPERADMIN" || session.role === "ADMIN") return;
-
-  // STORE_MANAGER and CUSTOMER must have membership
-  if (!session.storeIds.includes(storeId)) {
-    throw new AuthorizationError("Access denied. You do not have access to this store.");
-  }
+  if (session.districtId === districtId) return;
+  throw new AuthorizationError("Access denied. You do not have access to this district.");
 }
 
-export function canCreateCustomerStore(session: SessionData): boolean {
-  if (session.role === "SUPERADMIN" || session.role === "ADMIN") return true;
-  if (session.role === "STORE_MANAGER" && session.approvalStatus === "APPROVED") return true;
-  return false;
+export function requireDistributorAccess(session: SessionData, distributorId: string): void {
+  if (session.role === "SUPERADMIN" || session.role === "ADMIN") return;
+  if (session.role === "C_AND_F") return; // C&F can view all distributors under their ASMs
+  if (session.distributorIds.includes(distributorId)) return;
+  throw new AuthorizationError("Access denied. You do not have access to this distributor.");
 }
 
-export function canApproveStoreManager(session: SessionData): boolean {
+export function canAssignDistributors(session: SessionData): boolean {
+  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "ASM";
+}
+
+export function canApproveAsm(session: SessionData): boolean {
   return session.role === "SUPERADMIN";
 }
 
@@ -38,8 +39,16 @@ export function canManageRoles(session: SessionData): boolean {
   return session.role === "SUPERADMIN";
 }
 
+export function canCreateOrder(session: SessionData): boolean {
+  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "ASM";
+}
+
 export function canTransitionOrder(session: SessionData): boolean {
-  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "STORE_MANAGER";
+  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "C_AND_F";
+}
+
+export function canApproveOrder(session: SessionData): boolean {
+  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "C_AND_F";
 }
 
 export function canViewAuditLogs(session: SessionData): boolean {
@@ -47,12 +56,11 @@ export function canViewAuditLogs(session: SessionData): boolean {
 }
 
 export function canManageInventory(session: SessionData): boolean {
-  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "STORE_MANAGER";
+  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "C_AND_F";
 }
 
 export function canAccessPos(session: SessionData): boolean {
-  // CUSTOMER can access POS only for their store
-  return true; // All authenticated users can access POS for stores they have access to
+  return true;
 }
 
 export function redirectPathForRole(role: UserRole): string {
@@ -61,9 +69,13 @@ export function redirectPathForRole(role: UserRole): string {
       return "/superadmin/dashboard";
     case "ADMIN":
       return "/admin/dashboard";
-    case "STORE_MANAGER":
-      return "/manager/dashboard";
-    case "CUSTOMER":
+    case "ASM":
+      return "/asm/dashboard";
+    case "C_AND_F":
+      return "/cf/dashboard";
+    case "DISTRIBUTOR":
+      return "/storefront/dashboard";
+    default:
       return "/storefront/catalog";
   }
 }

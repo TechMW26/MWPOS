@@ -7,31 +7,46 @@ import { DataTable } from '@/components/ui/data-table';
 import { StatCard } from '@/components/ui/stat-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
+import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign, Edit3 } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
 
-export default function ManagerDetailPage() {
+export default function AsmDetailPage() {
   const { uid } = useParams<{ uid: string }>();
   const [manager, setManager] = useState<any>(null);
   const [stores, setStores] = useState<any[]>([]);
   const [allStores, setAllStores] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ email: '', phone: '', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
 
   useEffect(() => {
     async function load() {
       try {
         const [usersRes, storesRes, allStoresRes] = await Promise.all([
-          fetch('/api/users?role=STORE_MANAGER'),
+          fetch('/api/users?role=ASM'),
           fetch('/api/stores'),
-          fetch('/api/stores?type=CUSTOMER'),
+          fetch('/api/distributors'),
         ]);
         const users = await usersRes.json();
         const allS = await allStoresRes.json();
         const st = await storesRes.json();
         const mgr = (Array.isArray(users) ? users : []).find((u: any) => u.uid === uid);
         setManager(mgr || null);
+        if (mgr) setEditForm({
+          email: mgr.email || '',
+          phone: mgr.phone || '',
+          displayName: mgr.displayName || '',
+          role: mgr.role || 'ASM',
+          approvalStatus: mgr.approvalStatus || '',
+          districtId: mgr.districtId || '',
+          cfId: mgr.cfId || '',
+          avatarUrl: mgr.avatarUrl || '',
+          isActive: mgr.isActive,
+        });
         const storeList = Array.isArray(st) ? st : [];
         setAllStores(Array.isArray(allS) ? allS : []);
 
@@ -73,41 +88,80 @@ export default function ManagerDetailPage() {
     setStores(stores.filter(s => s.id !== storeId));
   }
 
+  async function saveManager() {
+    await fetch('/api/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uid,
+        email: editForm.email || null,
+        phone: editForm.phone || null,
+        displayName: editForm.displayName,
+        role: editForm.role,
+        approvalStatus: editForm.approvalStatus || undefined,
+        districtId: editForm.districtId || null,
+        cfId: editForm.cfId || null,
+        avatarUrl: editForm.avatarUrl || null,
+        isActive: editForm.isActive,
+      }),
+    });
+    setManager({ ...manager, ...editForm, approvalStatus: editForm.approvalStatus || null, districtId: editForm.districtId || null, cfId: editForm.cfId || null, avatarUrl: editForm.avatarUrl || null });
+    setEditing(false);
+  }
+
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
-  if (!manager) return <div className="p-6 text-destructive">Manager not found</div>;
+  if (!manager) return <div className="p-6 text-destructive">ASM not found</div>;
 
   const revenue = orders.reduce((s: number, o: any) => s + (o.totalPaise || 0), 0);
   const completedOrders = orders.filter((o: any) => o.status === 'DELIVERED' || o.status === 'COMPLETED');
   const pendingOrders = orders.filter((o: any) => o.status !== 'DELIVERED' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
-  const unassignedStores = allStores.filter(s => !s.managerUid && s.type === 'CUSTOMER');
+  const unassignedDistributors = allStores.filter((s: any) => !s.managerUid);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/superadmin/store-managers"><ArrowLeft className="h-5 w-5 text-muted-foreground hover:text-foreground" /></Link>
         <div>
-          <h1 className="text-xl font-bold">{manager.displayName || manager.email || manager.phone}</h1>
+          <p className="font-semibold">{manager.displayName || manager.email || manager.phone}</p>
           <p className="text-sm text-muted-foreground">{manager.email} {manager.phone ? '· ' + manager.phone : ''}</p>
         </div>
         <Badge variant={manager.approvalStatus === 'APPROVED' ? 'success' : manager.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>
           {manager.approvalStatus || 'N/A'}
         </Badge>
         <Badge variant={manager.isActive ? 'success' : 'destructive'}>{manager.isActive ? 'Active' : 'Inactive'}</Badge>
+        <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit3 className="h-3 w-3 mr-1" />Edit</Button>
       </div>
 
+      <Modal open={editing} title="Edit ASM" onClose={() => setEditing(false)} className="max-w-3xl">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div><label className="text-sm font-medium block mb-1">Display Name</label><Input value={editForm.displayName} onChange={e => setEditForm({ ...editForm, displayName: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">Email</label><Input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">Phone</label><Input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">Role</label><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}><option value="ASM">ASM</option><option value="C_AND_F">C&amp;F</option><option value="DISTRIBUTOR">Distributor</option><option value="ADMIN">Admin</option><option value="SUPERADMIN">Superadmin</option></select></div>
+            <div><label className="text-sm font-medium block mb-1">Approval Status</label><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editForm.approvalStatus} onChange={e => setEditForm({ ...editForm, approvalStatus: e.target.value })}><option value="">Not required</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option></select></div>
+            <div><label className="text-sm font-medium block mb-1">District ID</label><Input value={editForm.districtId} onChange={e => setEditForm({ ...editForm, districtId: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">C&amp;F ID</label><Input value={editForm.cfId} onChange={e => setEditForm({ ...editForm, cfId: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">Avatar URL</label><Input value={editForm.avatarUrl} onChange={e => setEditForm({ ...editForm, avatarUrl: e.target.value })} /></div>
+          </div>
+          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={editForm.isActive} onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })} className="h-4 w-4" />Active</label>
+          <Button onClick={saveManager}>Save Changes</Button>
+        </div>
+      </Modal>
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard title="Assigned Stores" value={stores.length} icon={<Store className="h-4 w-4" />} />
+        <StatCard title="Assigned Distributors" value={stores.length} icon={<Store className="h-4 w-4" />} />
         <StatCard title="Revenue" value={formatCurrency(revenue)} icon={<DollarSign className="h-4 w-4" />} />
         <StatCard title="Completed Orders" value={completedOrders.length} icon={<TrendingUp className="h-4 w-4" />} />
         <StatCard title="Pending Orders" value={pendingOrders.length} icon={<ClipboardList className="h-4 w-4" />} />
       </div>
 
-      {/* Assigned Stores */}
+      {/* Assigned Distributors */}
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-4 w-4" />Assigned Stores ({stores.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-4 w-4" />Assigned Distributors ({stores.length})</CardTitle></CardHeader>
         <CardContent>
           {stores.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No stores assigned yet.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No distributors assigned yet.</p>
           ) : (
             <DataTable data={stores} columns={[
               { key: 'name', header: 'Store' },
@@ -122,15 +176,15 @@ export default function ManagerDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Assign New Store */}
-      {unassignedStores.length > 0 && (
+      {/* Assign New Distributor */}
+      {unassignedDistributors.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Assign Additional Store</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Assign Distributor</CardTitle></CardHeader>
           <CardContent className="flex items-center gap-3 flex-wrap">
             <select className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm flex-1 min-w-[200px]"
               defaultValue="" onChange={e => { if (e.target.value) assignStore(e.target.value); e.target.value = ''; }}>
-              <option value="">Select a store...</option>
-              {unassignedStores.map(s => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
+              <option value="">Select a distributor...</option>
+              {unassignedDistributors.map((s: any) => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
             </select>
           </CardContent>
         </Card>

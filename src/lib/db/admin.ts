@@ -97,13 +97,20 @@ class RtdbRef {
   }
 
   async update(value: Record<string, unknown>): Promise<void> {
+    let body: string;
+    try {
+      body = JSON.stringify(value);
+    } catch (e) {
+      throw new Error(`RTDB update failed: cannot serialize data — ${e instanceof Error ? e.message : String(e)}`);
+    }
     const response = await fetch(buildUrl(this.path), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(value),
+      body,
     });
     if (!response.ok) {
-      throw new Error(`RTDB update failed: ${response.status}`);
+      const details = await response.text().catch(() => "");
+      throw new Error(`RTDB update failed: ${response.status}${details ? ` ${details}` : ""}`);
     }
   }
 

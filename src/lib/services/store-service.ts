@@ -6,12 +6,13 @@ import { adminDb } from "@/lib/db/admin";
 import { v4 as uuidv4 } from "uuid";
 import { writeAuditLog } from "./audit-service";
 import { findOrCreateCustomerOwner } from "./user-service";
-import type { Store, SessionData, UserStoreMembership } from "@/types/models";
+import type { Store, SessionData, UserDistributorMembership } from "@/types/models";
 import type { StoreType } from "@/types";
 
 interface CreateStoreInput {
   name: string;
   type: StoreType;
+  districtId?: string | null;
   address: string;
   city: string;
   state: string;
@@ -29,23 +30,22 @@ interface CreateStoreInput {
 export async function createStore(input: CreateStoreInput, session: SessionData): Promise<Store> {
   const storeId = uuidv4();
   const now = new Date().toISOString();
-  const owner =
-    input.type === "CUSTOMER"
-      ? await findOrCreateCustomerOwner({
-          ownerUid: input.ownerUid ?? (session.role === "CUSTOMER" ? session.uid : null),
-          email: input.ownerEmail ?? input.email,
-          phone: input.ownerPhone ?? input.phone,
-          displayName: input.ownerName ?? input.name,
-        })
-      : null;
 
   const isAdminCreator = session.role === "ADMIN" || session.role === "SUPERADMIN";
   const autoApproved = input.type === "DISTRIBUTION" || isAdminCreator;
+  const owner = await findOrCreateCustomerOwner({
+    ownerUid: input.ownerUid,
+    email: input.ownerEmail,
+    phone: input.ownerPhone,
+    displayName: input.ownerName || input.name,
+    role: input.type === "DISTRIBUTOR" ? "DISTRIBUTOR" : undefined,
+  });
 
   const store: Store = {
     id: storeId,
     name: input.name,
     type: input.type,
+    districtId: input.districtId ?? null,
     ownerUid: owner?.uid ?? null,
     managerUid: null,
     logoUrl: input.logoUrl ?? null,
@@ -54,7 +54,7 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
     state: input.state,
     pincode: input.pincode,
     phone: input.phone,
-    email: input.email ?? owner?.email ?? null,
+    email: input.email ?? null,
     gstin: input.gstin ?? null,
     approvalStatus: autoApproved ? "APPROVED" : "PENDING",
     isActive: true,
@@ -63,9 +63,9 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
     updatedAt: now,
   };
 
-  const creatorMembership: UserStoreMembership = {
+  const creatorMembership: UserDistributorMembership = {
     uid: session.uid,
-    storeId,
+    distributorId: storeId,
     role: "CREATOR",
     joinedAt: now,
   };
@@ -77,14 +77,21 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
   };
 
   if (owner) {
-    const ownerMembership: UserStoreMembership = {
+    const ownerMembership: UserDistributorMembership = {
       uid: owner.uid,
-      storeId,
+      distributorId: storeId,
       role: "OWNER",
       joinedAt: now,
     };
     updates[`storeMembers/${storeId}/${owner.uid}`] = ownerMembership;
     updates[`userStoreMemberships/${owner.uid}/${storeId}`] = ownerMembership;
+  }
+
+  if (input.type === "DISTRIBUTOR") {
+    updates[`distributors/${storeId}`] = {
+      ...store,
+      districtId: input.districtId ?? "",
+    };
   }
 
   await adminDb.ref().update(updates);
@@ -126,6 +133,14 @@ export async function updateStore(storeId: string, updates: Partial<Store>, sess
     ...updates,
     updatedAt: new Date().toISOString(),
   });
+
+  const distributorSnap = await adminDb.ref(`distributors/${storeId}`).get();
+  if (distributorSnap.exists()) {
+    await adminDb.ref(`distributors/${storeId}`).update({
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 
   await writeAuditLog({
     actorId: session.uid,

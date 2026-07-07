@@ -10,13 +10,16 @@ import { type ReactNode } from 'react'
 import { NotificationProvider } from '@/components/notification-provider'
 import { NativeFcmBridge } from '@/components/native-fcm-bridge'
 import { PwaRegister } from '@/components/pwa-register'
+import { ToastProvider } from '@/lib/hooks/use-toast'
 
 export function AppProviders ({ children }: { children: ReactNode }) {
   return (
     <NotificationProvider>
-      {children}
-      <NativeFcmBridge />
-      <PwaRegister />
+      <ToastProvider>
+        {children}
+        <NativeFcmBridge />
+        <PwaRegister />
+      </ToastProvider>
     </NotificationProvider>
   )
 }

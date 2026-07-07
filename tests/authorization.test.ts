@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   requireRole,
-  requireStoreAccess,
-  canCreateCustomerStore,
-  canApproveStoreManager,
+  requireDistrictAccess,
+  requireDistributorAccess,
+  canAssignDistributors,
+  canApproveAsm,
   AuthorizationError,
 } from "@/lib/auth/authorization";
 import type { SessionData } from "@/types/models";
@@ -11,31 +12,31 @@ import type { SessionData } from "@/types/models";
 const superadmin: SessionData = {
   uid: "sa1", email: "sa@test.com", phone: null,
   displayName: "Super Admin", role: "SUPERADMIN",
-  storeIds: [], approvalStatus: null,
+  storeIds: [], distributorIds: [], districtId: null, cfId: null, approvalStatus: null,
 };
 
 const admin: SessionData = {
   uid: "a1", email: "a@test.com", phone: null,
   displayName: "Admin", role: "ADMIN",
-  storeIds: [], approvalStatus: null,
+  storeIds: [], distributorIds: [], districtId: null, cfId: null, approvalStatus: null,
 };
 
-const approvedManager: SessionData = {
+const approvedAsm: SessionData = {
   uid: "m1", email: "m@test.com", phone: null,
-  displayName: "Manager", role: "STORE_MANAGER",
-  storeIds: ["store1"], approvalStatus: "APPROVED",
+  displayName: "ASM", role: "ASM",
+  storeIds: [], distributorIds: ["dist1"], districtId: "district1", cfId: "cf1", approvalStatus: "APPROVED",
 };
 
-const pendingManager: SessionData = {
+const pendingAsm: SessionData = {
   uid: "m2", email: "m2@test.com", phone: null,
-  displayName: "Pending Manager", role: "STORE_MANAGER",
-  storeIds: ["store1"], approvalStatus: "PENDING",
+  displayName: "Pending ASM", role: "ASM",
+  storeIds: [], distributorIds: ["dist1"], districtId: "district1", cfId: null, approvalStatus: "PENDING",
 };
 
-const customer: SessionData = {
-  uid: "c1", email: "c@test.com", phone: null,
-  displayName: "Customer", role: "CUSTOMER",
-  storeIds: ["store1"], approvalStatus: null,
+const cf: SessionData = {
+  uid: "cf1", email: "cf@test.com", phone: null,
+  displayName: "C&F", role: "C_AND_F",
+  storeIds: [], distributorIds: [], districtId: null, cfId: null, approvalStatus: null,
 };
 
 describe("Authorization", () => {
@@ -44,42 +45,60 @@ describe("Authorization", () => {
       expect(() => requireRole(superadmin, "SUPERADMIN")).not.toThrow();
     });
 
-    it("denies CUSTOMER for ADMIN role", () => {
-      expect(() => requireRole(customer, "ADMIN")).toThrow(AuthorizationError);
+    it("denies ASM for ADMIN role", () => {
+      expect(() => requireRole(approvedAsm, "ADMIN")).toThrow(AuthorizationError);
     });
   });
 
-  describe("requireStoreAccess", () => {
-    it("allows SUPERADMIN to any store", () => {
-      expect(() => requireStoreAccess(superadmin, "any-store")).not.toThrow();
+  describe("requireDistrictAccess", () => {
+    it("allows SUPERADMIN to any district", () => {
+      expect(() => requireDistrictAccess(superadmin, "any-district")).not.toThrow();
     });
 
-    it("allows ADMIN to any store", () => {
-      expect(() => requireStoreAccess(admin, "any-store")).not.toThrow();
+    it("allows ADMIN to any district", () => {
+      expect(() => requireDistrictAccess(admin, "any-district")).not.toThrow();
     });
 
-    it("denies CUSTOMER to non-member store", () => {
-      expect(() => requireStoreAccess(customer, "other-store")).toThrow(AuthorizationError);
+    it("denies ASM to non-assigned district", () => {
+      expect(() => requireDistrictAccess(approvedAsm, "other-district")).toThrow(AuthorizationError);
     });
 
-    it("allows CUSTOMER to own store", () => {
-      expect(() => requireStoreAccess(customer, "store1")).not.toThrow();
+    it("allows ASM to own district", () => {
+      expect(() => requireDistrictAccess(approvedAsm, "district1")).not.toThrow();
     });
   });
 
-  describe("canCreateCustomerStore", () => {
-    it("SUPERADMIN can create", () => expect(canCreateCustomerStore(superadmin)).toBe(true));
-    it("ADMIN can create", () => expect(canCreateCustomerStore(admin)).toBe(true));
-    it("APPROVED manager can create", () => expect(canCreateCustomerStore(approvedManager)).toBe(true));
-    it("PENDING manager cannot create", () => expect(canCreateCustomerStore(pendingManager)).toBe(false));
-    it("CUSTOMER cannot create", () => expect(canCreateCustomerStore(customer)).toBe(false));
+  describe("requireDistributorAccess", () => {
+    it("SUPERADMIN can access any", () => {
+      expect(() => requireDistributorAccess(superadmin, "any-dist")).not.toThrow();
+    });
+
+    it("C&F can access any", () => {
+      expect(() => requireDistributorAccess(cf, "any-dist")).not.toThrow();
+    });
+
+    it("ASM denied to non-owned distributor", () => {
+      // ASM without matching distributorId should be denied
+      expect(() => requireDistributorAccess(pendingAsm, "other-dist")).toThrow(AuthorizationError);
+    });
+
+    it("ASM allowed to own distributor", () => {
+      expect(() => requireDistributorAccess(approvedAsm, "dist1")).not.toThrow();
+    });
   });
 
-  describe("canApproveStoreManager", () => {
+  describe("canAssignDistributors", () => {
+    it("SUPERADMIN can assign", () => expect(canAssignDistributors(superadmin)).toBe(true));
+    it("ADMIN can assign", () => expect(canAssignDistributors(admin)).toBe(true));
+    it("ASM can assign", () => expect(canAssignDistributors(approvedAsm)).toBe(true));
+    it("C&F cannot assign", () => expect(canAssignDistributors(cf)).toBe(false));
+  });
+
+  describe("canApproveAsm", () => {
     it("only SUPERADMIN can approve", () => {
-      expect(canApproveStoreManager(superadmin)).toBe(true);
-      expect(canApproveStoreManager(admin)).toBe(false);
-      expect(canApproveStoreManager(approvedManager)).toBe(false);
+      expect(canApproveAsm(superadmin)).toBe(true);
+      expect(canApproveAsm(admin)).toBe(false);
+      expect(canApproveAsm(approvedAsm)).toBe(false);
     });
   });
 });

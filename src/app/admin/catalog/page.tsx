@@ -82,9 +82,9 @@ export default function AdminCatalogPage() {
       {assignMsg && <div className="p-2 rounded bg-muted text-sm">{assignMsg}</div>}
 
       {error ? (
-        <Card className="border-destructive"><CardContent className="py-8 text-center"><p className="text-destructive">{error}</p></CardContent></Card>
+        <Card className="border-destructive"><CardContent className="p-4 text-center"><p className="text-destructive">{error}</p></CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-16 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p>{!search && <Link href="/superadmin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
+        <Card><CardContent className="p-4 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p>{!search && <Link href="/superadmin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((product: any) => {

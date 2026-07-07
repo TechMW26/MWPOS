@@ -19,7 +19,8 @@ export const verifyOtpSchema = z.object({
 
 export const createStoreSchema = z.object({
   name: z.string().min(2).max(200),
-  type: z.enum(["DISTRIBUTION", "CUSTOMER"]),
+  type: z.enum(["DISTRIBUTION", "DISTRIBUTOR"]),
+  districtId: z.string().min(1).nullable().optional(),
   address: z.string().min(5).max(500),
   city: z.string().min(1).max(100),
   state: z.string().min(1).max(100),
@@ -49,9 +50,9 @@ export const createSkuSchema = z.object({
   sku: z.string().min(1).max(50),
   barcode: z.string().max(100).nullable().optional(),
   unit: z.string().min(1).max(20),
-  mrp: z.number().int().positive("MRP must be positive paise"),
-  sellingPrice: z.number().int().positive("Selling price must be positive paise"),
-  costPrice: z.number().int().positive("Cost price must be positive paise"),
+  mrp: z.number().int().positive("MRP must be positive"),
+  sellingPrice: z.number().int().positive("Selling price must be positive"),
+  costPrice: z.number().int().positive("Cost price must be positive"),
   taxType: z.enum(["GST", "VAT", "NONE"]),
   taxRate: z.number().int().min(0).max(100),
   hsnCode: z.string().max(20).nullable().optional(),
@@ -81,8 +82,13 @@ export const inventoryMovementSchema = z.object({
 // ─── Order Schemas ───────────────────────────────────────────
 
 export const createOrderSchema = z.object({
-  customerStoreId: z.string().min(1),
+  distributorId: z.string().min(1).optional(),
   paymentMode: z.enum(["UPFRONT", "PAY_LATER"]).default("PAY_LATER"),
+  paymentProofType: z.enum(["ONLINE", "CHEQUE"]).nullable().optional(),
+  paymentProofUrl: optionalText,
+  paymentProofFileName: optionalText,
+  paymentProofMimeType: optionalText,
+  paymentReference: optionalText,
   items: z
     .array(
       z.object({
@@ -96,12 +102,40 @@ export const createOrderSchema = z.object({
   idempotencyKey: z.string().min(1),
 });
 
+export const verifyOrderOtpSchema = z.object({
+  orderId: z.string().min(1),
+  otpCode: z.string().length(6),
+});
+
+export const createDistrictSchema = z.object({
+  name: z.string().min(2).max(200),
+  city: z.string().min(1).max(100),
+  state: z.string().min(1).max(100),
+});
+
+export const createDistributorSchema = z.object({
+  name: z.string().min(2).max(200),
+  districtId: z.string().min(1),
+  address: z.string().min(5).max(500),
+  city: z.string().min(1).max(100),
+  state: z.string().min(1).max(100),
+  pincode: z.string().min(5).max(10),
+  phone: z.string().min(10).max(15),
+  email: optionalEmail,
+  gstin: optionalText,
+  ownerUid: optionalText,
+  ownerEmail: optionalEmail,
+  ownerPhone: optionalText,
+  ownerName: optionalText,
+  logoUrl: z.string().nullable().optional(),
+});
+
 export const transitionOrderSchema = z.object({
   orderId: z.string().min(1),
   toStatus: z.enum([
-    "SUBMITTED",
-    "PENDING_OWNER_APPROVAL",
-    "APPROVED",
+    "PENDING_OTP",
+    "OTP_VERIFIED",
+    "CF_APPROVED",
     "ALLOCATED",
     "PICKING",
     "PACKED",
@@ -165,8 +199,13 @@ export const closeRegisterSchema = z.object({
 export const updateUserSchema = z.object({
   uid: z.string().min(1),
   displayName: z.string().min(2).max(200).optional(),
-  role: z.enum(["SUPERADMIN", "ADMIN", "STORE_MANAGER", "CUSTOMER"]).optional(),
+  email: optionalEmail,
+  phone: optionalText,
+  role: z.enum(["SUPERADMIN", "ADMIN", "ASM", "C_AND_F", "DISTRIBUTOR"]).optional(),
   approvalStatus: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  districtId: optionalText,
+  cfId: optionalText,
+  avatarUrl: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
 

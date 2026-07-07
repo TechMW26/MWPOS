@@ -1,86 +1,131 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 import { Plus, Check, X, Trash2, Edit3 } from 'lucide-react';
+import { INDIAN_STATES, getAreasForCity, getDistrictsForState } from '@/lib/indian-districts';
+import type { District } from '@/types/models';
 
-export default function StoresPage() {
-  const [stores, setStores] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [managers, setManagers] = useState<any[]>([]);
+export default function DistributorsPage() {
+  const [distributors, setDistributors] = useState<any[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [cityAreas, setCityAreas] = useState<string[]>([]);
+  const [areasLoading, setAreasLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [editingStore, setEditingStore] = useState<any>(null);
-  const [form, setForm] = useState({ name:'', type:'CUSTOMER', address:'', city:'', state:'', pincode:'', phone:'', email:'', logoUrl:'', ownerUid:'', ownerName:'', ownerEmail:'', ownerPhone:'', managerUid:'' });
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name:'', state:'', district:'', address:'', city:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+
+  const citiesForState = useMemo(() => {
+    const cities = districts
+      .filter(d => d.state === form.state && d.city)
+      .map(d => d.city);
+    return Array.from(new Set([...cities, ...getDistrictsForState(form.state)])).sort();
+  }, [districts, form.state]);
+  const districtsForCity = useMemo(() => {
+    const configured = districts
+      .filter(d => d.state === form.state && d.city === form.city)
+      .map(d => ({ id: d.id, name: d.name, city: d.city, state: d.state }));
+    const areas = Array.from(new Set([...getAreasForCity(form.state, form.city), ...cityAreas]));
+    const areaOptions = areas.map(area => ({
+      id: `${form.state}|${form.city}|${area}`,
+      name: area,
+      city: form.city,
+      state: form.state,
+    }));
+    const fallback = getDistrictsForState(form.state).includes(form.city)
+      ? [{ id: `${form.state}|${form.city}`, name: form.city, city: form.city, state: form.state }]
+      : [];
+    if (configured.length > 0) return configured;
+    if (areaOptions.length > 0) return areaOptions;
+    return fallback;
+  }, [cityAreas, districts, form.city, form.state]);
+  const districtById = useMemo(() => new Map(districts.map(d => [d.id, d])), [districts]);
 
   async function load() {
     try {
-      const [storeRes, customerRes, managerRes] = await Promise.all([
-        fetch('/api/stores'),
-        fetch('/api/users?role=CUSTOMER'),
-        fetch('/api/users?role=STORE_MANAGER&approvalStatus=APPROVED'),
+      const [distRes, districtRes] = await Promise.all([
+        fetch('/api/distributors'),
+        fetch('/api/districts'),
       ]);
-      const data = await storeRes.json(); const users = await customerRes.json(); const mgrs = await managerRes.json();
-      setStores(Array.isArray(data) ? data : []);
-      setCustomers(Array.isArray(users) ? users : []);
-      setManagers(Array.isArray(mgrs) ? mgrs : []);
+      const distData = await distRes.json();
+      const districtData = await districtRes.json();
+      setDistributors(Array.isArray(distData) ? distData : []);
+      setDistricts(Array.isArray(districtData) ? districtData : []);
     } catch(e){} finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (!form.state || !form.city) {
+      setCityAreas([]);
+      return;
+    }
+    const controller = new AbortController();
+    setAreasLoading(true);
+    fetch(`/api/geo/areas?state=${encodeURIComponent(form.state)}&city=${encodeURIComponent(form.city)}`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setCityAreas(Array.isArray(data) ? data : []))
+      .catch(() => setCityAreas([]))
+      .finally(() => setAreasLoading(false));
+    return () => controller.abort();
+  }, [form.city, form.state]);
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(form) });
-    setShowForm(false); load();
+    setCreateError('');
+    if (!form.state || !form.city || !form.district) { alert('Please select state, city and district'); return; }
+    setCreating(true);
+    try {
+      const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, districtId: form.district, type: 'DISTRIBUTOR' }) });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const fieldErrors = data?.errors?.fieldErrors
+          ? Object.entries(data.errors.fieldErrors).flatMap(([field, errors]) => (errors as string[]).map(error => `${field}: ${error}`)).join(', ')
+          : '';
+        throw new Error(fieldErrors || data?.message || 'Failed to create distributor');
+      }
+      setShowForm(false);
+      setForm({ name:'', state:'', district:'', address:'', city:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+      await load();
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Failed to create distributor');
+    } finally {
+      setCreating(false);
+    }
   }
 
-  async function handleApproval(storeId: string, approvalStatus: 'APPROVED' | 'REJECTED') {
-    await fetch('/api/stores', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ storeId, approvalStatus }) });
+  async function handleApproval(id: string, approvalStatus: 'APPROVED' | 'REJECTED') {
+    await fetch('/api/stores', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ storeId: id, approvalStatus }) });
     load();
   }
 
-  async function handleDelete(storeId: string) {
-    if (!confirm('Delete this store?')) return;
-    await fetch('/api/stores?storeId=' + storeId, { method:'DELETE' });
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this distributor?')) return;
+    await fetch('/api/stores?storeId=' + id, { method:'DELETE' });
     load();
-  }
-
-  function openEdit(store: any) {
-    setEditingStore(store);
   }
 
   async function handleEditSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!editingStore) return;
+    if (!editing) return;
     await fetch('/api/stores', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        storeId: editingStore.id,
-        name: editingStore.name,
-        address: editingStore.address,
-        city: editingStore.city,
-        state: editingStore.state,
-        pincode: editingStore.pincode,
-        phone: editingStore.phone,
-        email: editingStore.email,
-        ownerUid: editingStore.ownerUid || null,
-        managerUid: editingStore.managerUid || null,
-        isActive: editingStore.isActive,
+        storeId: editing.id, name: editing.name, address: editing.address,
+        city: editing.city, state: editing.state, pincode: editing.pincode,
+        phone: editing.phone, email: editing.email, gstin: editing.gstin,
+        isActive: editing.isActive,
       }),
     });
-    setEditingStore(null);
-    load();
-  }
-
-  function handleLogo(file: File | null) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setForm({ ...form, logoUrl: String(reader.result) });
-    reader.readAsDataURL(file);
+    setEditing(null); load();
   }
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
@@ -88,77 +133,89 @@ export default function StoresPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Button className="w-full sm:w-auto" onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2"/>{showForm ? 'Cancel' : 'Add Store'}</Button>
+        <Button className="w-full sm:w-auto" onClick={() => { setCreateError(''); setShowForm(true); }}>
+          <Plus className="h-4 w-4 mr-2"/>Add Distributor
+        </Button>
       </div>
-      {showForm && (
-        <Card>
-          <CardHeader><CardTitle>New Store</CardTitle></CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input placeholder="Store Name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} required />
-              <select className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.type} onChange={e => setForm({...form, type:e.target.value})}>
-                <option value="CUSTOMER">Customer Store</option>
-                <option value="DISTRIBUTION">Distribution Hub</option>
-              </select>
-              <Input placeholder="Address" value={form.address} onChange={e => setForm({...form, address:e.target.value})} required />
-              <Input placeholder="City" value={form.city} onChange={e => setForm({...form, city:e.target.value})} required />
-              <Input placeholder="State" value={form.state} onChange={e => setForm({...form, state:e.target.value})} required />
-              <Input placeholder="Pincode" value={form.pincode} onChange={e => setForm({...form, pincode:e.target.value})} required />
-              <Input placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} required />
-              <Input placeholder="Store Email (optional)" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
-              <div>
-                <label className="text-sm font-medium block mb-1">Store Logo</label>
-                <Input type="file" accept="image/*" onChange={e => handleLogo(e.target.files?.[0] ?? null)} />
+
+      <Modal open={showForm} title="New Distributor" onClose={() => { setCreateError(''); setShowForm(false); }}>
+            <form onSubmit={handleCreate} className="space-y-5">
+              {createError && <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{createError}</div>}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Input placeholder="Distributor Name *" value={form.name} onChange={e => setForm({...form, name:e.target.value})} required />
+                <Input placeholder="Phone *" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} required />
+                <Input placeholder="Email (optional)" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
+                <Input placeholder="GSTIN (optional)" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} />
               </div>
-              {form.type === 'CUSTOMER' && (
-                <div className="md:col-span-2 space-y-3 border-t pt-3">
-                  <p className="text-sm font-medium">Owner mapping for OTP login</p>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.ownerUid} onChange={e => setForm({...form, ownerUid:e.target.value})}>
-                    <option value="">Create or use owner details below</option>
-                    {customers.map((u:any) => <option key={u.uid} value={u.uid}>{u.displayName || u.email || u.phone}</option>)}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="text-sm font-medium block mb-1">State</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.state} onChange={e => setForm({...form, state:e.target.value, city:'', district:''})} required>
+                    <option value="">Select State *</option>
+                    {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
-                  {!form.ownerUid && (
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <Input placeholder="Owner name" value={form.ownerName} onChange={e => setForm({...form, ownerName:e.target.value})} />
-                      <Input placeholder="Owner email for OTP" value={form.ownerEmail} onChange={e => setForm({...form, ownerEmail:e.target.value})} />
-                      <Input placeholder="Owner phone for OTP" value={form.ownerPhone} onChange={e => setForm({...form, ownerPhone:e.target.value})} />
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-sm font-medium block mb-1">Assign Store Manager</label>
-                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.managerUid} onChange={e => setForm({...form, managerUid:e.target.value})}>
-                      <option value="">No manager</option>
-                      {managers.map((m:any) => <option key={m.uid} value={m.uid}>{m.displayName || m.email || m.phone}</option>)}
-                    </select>
-                  </div>
                 </div>
-              )}
-              <div className="md:col-span-2"><Button className="w-full sm:w-auto" type="submit">Create Store</Button></div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">City</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.city} onChange={e => setForm({...form, city:e.target.value, district:''})} required disabled={!form.state}>
+                    <option value="">{form.state ? 'Select City *' : 'Select state first'}</option>
+                    {citiesForState.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">District</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.district} onChange={e => setForm({...form, district:e.target.value})} required disabled={!form.city}>
+                    <option value="">{areasLoading ? 'Loading areas...' : 'Select District *'}</option>
+                    {districtsForCity.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
+                <Input placeholder="Address *" value={form.address} onChange={e => setForm({...form, address:e.target.value})} required />
+                <Input placeholder="Pincode *" value={form.pincode} onChange={e => setForm({...form, pincode:e.target.value})} required />
+              </div>
+              <div className="md:col-span-2 border-t pt-3">
+                <p className="text-sm font-medium mb-2">Owner Details (for OTP login)</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <Input placeholder="Owner name" value={form.ownerName} onChange={e => setForm({...form, ownerName:e.target.value})} />
+                  <Input placeholder="Owner email for OTP" value={form.ownerEmail} onChange={e => setForm({...form, ownerEmail:e.target.value})} />
+                  <Input placeholder="Owner phone" value={form.ownerPhone} onChange={e => setForm({...form, ownerPhone:e.target.value})} />
+                </div>
+              </div>
+              <div><Button className="w-full sm:w-auto" type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Distributor'}</Button></div>
             </form>
-          </CardContent>
-        </Card>
-      )}
+      </Modal>
+
       <Card>
-        <CardHeader><CardTitle>All Stores ({stores.length})</CardTitle></CardHeader>
+        <CardHeader><CardTitle>All Distributors ({distributors.length})</CardTitle></CardHeader>
         <CardContent>
           <DataTable
-            data={stores}
+            data={distributors}
             columns={[
               { key: 'name', header: 'Name' },
-              { key: 'type', header: 'Type', render: (s) => <Badge variant={s.type === 'DISTRIBUTION' ? 'default' : 'outline'}>{s.type}</Badge> },
+              { key: 'districtId', header: 'District', render: (d) => {
+                const district = districtById.get(d.districtId);
+                if (district) return <span className="text-sm">{district.name} <span className="text-muted-foreground text-xs">({district.city}, {district.state})</span></span>;
+                const parts = (d.districtId || '').split('|');
+                return <span className="text-sm">{parts[1] || d.districtId} <span className="text-muted-foreground text-xs">({parts[0]})</span></span>;
+              }},
               { key: 'city', header: 'City' },
               { key: 'phone', header: 'Phone' },
-              { key: 'approvalStatus', header: 'Status', render: (s) => <Badge variant={s.approvalStatus === 'APPROVED' ? 'success' : s.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>{s.approvalStatus}</Badge> },
-              { key: 'actions', header: 'Actions', render: (s) => (
+              { key: 'approvalStatus', header: 'Status', render: (d) => (
+                <Badge variant={d.approvalStatus === 'APPROVED' ? 'success' : d.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>
+                  {d.approvalStatus}
+                </Badge>
+              )},
+              { key: 'actions', header: 'Actions', render: (d) => (
                 <div className="flex gap-1">
-                  {s.approvalStatus === 'PENDING' && (
+                  {d.approvalStatus === 'PENDING' && (
                     <>
-                      <Button size="sm" variant="outline" className="text-green-600 h-8 px-2" onClick={() => handleApproval(s.id, 'APPROVED')}><Check className="h-3 w-3" /></Button>
-                      <Button size="sm" variant="outline" className="text-red-600 h-8 px-2" onClick={() => handleApproval(s.id, 'REJECTED')}><X className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="outline" className="text-green-600 h-8 px-2" onClick={() => handleApproval(d.id, 'APPROVED')}><Check className="h-3 w-3" /></Button>
+                      <Button size="sm" variant="outline" className="text-red-600 h-8 px-2" onClick={() => handleApproval(d.id, 'REJECTED')}><X className="h-3 w-3" /></Button>
                     </>
                   )}
-                  <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => openEdit(s)}><Edit3 className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" className="text-destructive h-8 px-2" onClick={() => handleDelete(s.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => setEditing(d)}><Edit3 className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" className="text-destructive h-8 px-2" onClick={() => handleDelete(d.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               )},
             ]}
@@ -166,82 +223,51 @@ export default function StoresPage() {
         </CardContent>
       </Card>
 
-      {/* Edit Store Modal */}
-      {editingStore && (
+      {editing && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-3">
-              {editingStore.logoUrl ? (
-                <img src={editingStore.logoUrl} alt={editingStore.name} className="h-10 w-10 rounded-md border object-cover" />
-              ) : null}
-              <CardTitle>Edit: {editingStore.name}</CardTitle>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => setEditingStore(null)}><X className="h-4 w-4" /></Button>
+            <CardTitle>Edit: {editing.name}</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setEditing(null)}><X className="h-4 w-4" /></Button>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 mb-4 p-3 rounded-md bg-muted/50 text-sm">
-              <div>
-                <span className="text-muted-foreground">Current Owner: </span>
-                <span className="font-medium">{customers.find((u: any) => u.uid === editingStore.ownerUid)?.displayName || customers.find((u: any) => u.uid === editingStore.ownerUid)?.email || editingStore.ownerUid || 'None'}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Status: </span>
-                <Badge variant={editingStore.approvalStatus === 'APPROVED' ? 'success' : editingStore.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>{editingStore.approvalStatus}</Badge>
-              </div>
-            </div>
             <form onSubmit={handleEditSave} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-sm font-medium block mb-1">Store Name</label>
-                <Input value={editingStore.name || ''} onChange={e => setEditingStore({ ...editingStore, name: e.target.value })} required />
+                <label className="text-sm font-medium block mb-1">Name</label>
+                <Input value={editing.name || ''} onChange={e => setEditing({ ...editing, name: e.target.value })} required />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">Phone</label>
-                <Input value={editingStore.phone || ''} onChange={e => setEditingStore({ ...editingStore, phone: e.target.value })} />
+                <Input value={editing.phone || ''} onChange={e => setEditing({ ...editing, phone: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">Email</label>
-                <Input value={editingStore.email || ''} onChange={e => setEditingStore({ ...editingStore, email: e.target.value })} />
+                <Input value={editing.email || ''} onChange={e => setEditing({ ...editing, email: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium block mb-1">Address</label>
-                <Input value={editingStore.address || ''} onChange={e => setEditingStore({ ...editingStore, address: e.target.value })} />
+                <label className="text-sm font-medium block mb-1">GSTIN</label>
+                <Input value={editing.gstin || ''} onChange={e => setEditing({ ...editing, gstin: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">City</label>
-                <Input value={editingStore.city || ''} onChange={e => setEditingStore({ ...editingStore, city: e.target.value })} />
+                <Input value={editing.city || ''} onChange={e => setEditing({ ...editing, city: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">State</label>
-                <Input value={editingStore.state || ''} onChange={e => setEditingStore({ ...editingStore, state: e.target.value })} />
+                <Input value={editing.state || ''} onChange={e => setEditing({ ...editing, state: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">Pincode</label>
-                <Input value={editingStore.pincode || ''} onChange={e => setEditingStore({ ...editingStore, pincode: e.target.value })} />
+                <Input value={editing.pincode || ''} onChange={e => setEditing({ ...editing, pincode: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium block mb-1">Reassign Owner</label>
-                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={editingStore.ownerUid || ''} onChange={e => setEditingStore({ ...editingStore, ownerUid: e.target.value || null })}>
-                  <option value="">No owner</option>
-                  {customers.map((u: any) => <option key={u.uid} value={u.uid}>{u.displayName || u.email || u.phone}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">Store Manager</label>
-                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={editingStore.managerUid || ''} onChange={e => setEditingStore({ ...editingStore, managerUid: e.target.value || null })}>
-                  <option value="">No manager</option>
-                  {managers.map((m: any) => <option key={m.uid} value={m.uid}>{m.displayName || m.email || m.phone}</option>)}
-                </select>
+                <label className="text-sm font-medium block mb-1">Address</label>
+                <Input value={editing.address || ''} onChange={e => setEditing({ ...editing, address: e.target.value })} />
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium">Active</label>
-                <input type="checkbox" checked={editingStore.isActive !== false} onChange={e => setEditingStore({ ...editingStore, isActive: e.target.checked })} className="h-4 w-4" />
+                <input type="checkbox" checked={editing.isActive !== false} onChange={e => setEditing({ ...editing, isActive: e.target.checked })} className="h-4 w-4" />
               </div>
-              <div className="md:col-span-2 flex gap-2">
-                <Button type="submit">Save Changes</Button>
-                <Button variant="outline" onClick={() => setEditingStore(null)}>Cancel</Button>
-              </div>
+              <div className="md:col-span-2"><Button type="submit">Save Changes</Button></div>
             </form>
           </CardContent>
         </Card>

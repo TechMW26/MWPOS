@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
 import { StatCard } from '@/components/ui/stat-card';
+import { Card } from '@/components/ui/card';
 import { Package, ClipboardList, AlertTriangle, ArrowRight } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { DistributionDonut } from '@/components/dashboard/visuals';
@@ -11,37 +12,46 @@ import { DashboardTabs } from '@/components/dashboard/dashboard-tabs';
 
 export default function ManagerDashboard() {
   const [inventory, setInventory] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
+  const [distributors, setDistributors] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
-  const [selectedStore, setSelectedStore] = useState('');
+  const [selectedDistributor, setSelectedDistributor] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const storeRes = await fetch('/api/stores?type=CUSTOMER').then(r => r.json());
-        const storeList = Array.isArray(storeRes) ? storeRes : [];
-        const activeStore = selectedStore || storeList[0]?.id || 'store-cust-001';
-        const [prodRes, invRes, orderRes] = await Promise.all([
+        const [distRes, prodRes] = await Promise.all([
+          fetch('/api/distributors').then(r => r.json()),
           fetch('/api/products').then(r => r.json()),
-          fetch('/api/inventory?storeId='+activeStore).then(r => r.json()).catch(() => []),
-          fetch('/api/orders?storeId='+activeStore).then(r => r.json()).catch(() => []),
         ]);
+        const dList = Array.isArray(distRes) ? distRes : [];
         setProducts(Array.isArray(prodRes) ? prodRes : []);
-        setInventory(Array.isArray(invRes) ? invRes : []);
-        setStores(storeList);
-        if (!selectedStore && storeList[0]?.id) setSelectedStore(storeList[0].id);
-        setOrders(Array.isArray(orderRes) ? orderRes : []);
+        setDistributors(dList);
+        setSelectedDistributor(dList[0]?.id ?? '');
       } catch(e){} finally { setLoading(false); }
     }
     load();
-  }, [selectedStore]);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedDistributor) return;
+    let cancelled = false;
+    Promise.all([
+      fetch('/api/inventory?storeId='+selectedDistributor).then(r => r.json()).catch(() => []),
+      fetch('/api/orders?distributorId='+selectedDistributor).then(r => r.json()).catch(() => []),
+    ]).then(([invRes, orderRes]) => {
+      if (cancelled) return;
+      setInventory(Array.isArray(invRes) ? invRes : []);
+      setOrders(Array.isArray(orderRes) ? orderRes : []);
+    });
+    return () => { cancelled = true; };
+  }, [selectedDistributor]);
 
   const revenue = orders.reduce((s,o)=>s+(o.totalPaise||0),0);
   const khataDue = orders.filter(o=>o.paymentMode==='PAY_LATER' && o.paymentStatus !== 'COMPLETED').reduce((s,o)=>s+(o.totalPaise||0),0);
   const lowStock = inventory.filter((i:any)=>i.available<=(i.reorderThreshold||10)).length;
-  const approvals = orders.filter(o=>o.status === 'PENDING_OWNER_APPROVAL').length;
+  const approvals = orders.filter(o=>o.status === 'PENDING_OTP' || o.status === 'PENDING_CF_APPROVAL').length;
 
   const revenueTrend = useMemo(() => {
     const days: Record<string, number> = {};
@@ -51,13 +61,14 @@ export default function ManagerDashboard() {
   }, [orders]);
 
   if (loading) return <DashboardSkeleton />;
+  if (distributors.length === 0) return <div className="p-6"><Card className="p-4 text-center"><p className="text-muted-foreground">No distributors assigned to your district. Contact your admin.</p></Card></div>;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <DashboardTabs value="overview" onChange={()=>{}} tabs={[{ value: 'overview', label: 'Overview' }]} />
-        <select className="flex h-10 rounded-md border px-3 py-2 text-sm" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        <select className="flex h-10 rounded-md border px-3 py-2 text-sm" value={selectedDistributor} onChange={e => setSelectedDistributor(e.target.value)}>
+          {distributors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
 

@@ -5,6 +5,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 import { Plus, Check, X } from 'lucide-react';
 
 export default function CustomerStoresPage() {
@@ -45,10 +46,9 @@ export default function CustomerStoresPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Button className="w-full sm:w-auto" onClick={() => setShowForm(!showForm)}><Plus className="h-4 w-4 mr-2"/>{showForm ? 'Cancel' : 'Add Store'}</Button>
+        <Button className="w-full sm:w-auto" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-2"/>Add Store</Button>
       </div>
-      {showForm && (
-        <Card><CardHeader><CardTitle>New Customer Store</CardTitle></CardHeader><CardContent>
+      <Modal open={showForm} title="New Customer Store" onClose={() => setShowForm(false)}>
           <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Input placeholder="Store Name" value={form.name} onChange={e => setForm({...form, name:e.target.value})} required />
             <Input placeholder="Address" value={form.address} onChange={e => setForm({...form, address:e.target.value})} required />
@@ -77,8 +77,7 @@ export default function CustomerStoresPage() {
             </div>
             <div className="md:col-span-2"><Button className="w-full sm:w-auto" type="submit">Create Store</Button></div>
           </form>
-        </CardContent></Card>
-      )}
+      </Modal>
       <Card><CardHeader><CardTitle>All Customer Stores ({stores.length})</CardTitle></CardHeader><CardContent>
         <DataTable data={stores} columns={[
           { key: 'name', header: 'Name' }, { key: 'city', header: 'City' }, { key: 'phone', header: 'Phone' },

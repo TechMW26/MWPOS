@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { requireStoreAccess, canManageInventory } from "@/lib/auth/authorization";
+import { requireDistributorAccess, canManageInventory } from "@/lib/auth/authorization";
 import { inventoryMovementSchema } from "@/lib/validation/schemas";
 import { createInventoryMovement } from "@/lib/services/inventory-service";
 
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = inventoryMovementSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ message: "Invalid data", errors: parsed.error.flatten() }, { status: 400 });
-    requireStoreAccess(session, parsed.data.storeId);
+    requireDistributorAccess(session, parsed.data.storeId);
     const result = await createInventoryMovement({ ...parsed.data, performedBy: session.uid });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

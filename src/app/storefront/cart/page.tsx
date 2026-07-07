@@ -1,14 +1,17 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuantityControl } from '@/components/ui/quantity-control';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, CreditCard, Minus, Plus, ShoppingCart, Trash2, WalletCards } from 'lucide-react';
+import { ArrowLeft, CreditCard, ShoppingCart, Trash2, WalletCards } from 'lucide-react';
 
 interface CartItem { skuId: string; productName: string; sku: string; quantity: number; unitPrice: number; taxRate: number; }
 
 export default function CartPage() {
+  const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [notes, setNotes] = useState('');
   const [paymentMode, setPaymentMode] = useState<'PAY_LATER' | 'UPFRONT'>('PAY_LATER');
@@ -32,14 +35,19 @@ export default function CartPage() {
       const res = await fetch('/api/orders', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
-          customerStoreId: 'store-cust-001',
           paymentMode,
           items: cart.map(c => ({ skuId: c.skuId, productId: c.skuId, quantity: c.quantity })),
           notes, idempotencyKey: crypto.randomUUID(),
         }),
       });
       const data = await res.json();
-      if (res.ok) { alert('Order placed! Order ID: ' + data.orderId); setCart([]); setNotes(''); }
+      if (res.ok) {
+        setCart([]);
+        setNotes('');
+        const orderId = data.orderId || data.id;
+        if (paymentMode === 'PAY_LATER' && orderId) router.push(`/storefront/orders/${orderId}`);
+        else alert('Order placed! Order ID: ' + orderId);
+      }
       else { alert('Failed: ' + (data.message || 'Unknown error')); }
     } finally { setSubmitting(false); }
   }
@@ -147,11 +155,9 @@ function CartItems({
               <p className="truncate font-medium">{item.productName}</p>
               <p className="text-sm text-muted-foreground">{item.sku} · {formatCurrency(item.unitPrice)} each</p>
             </div>
-            <div className="flex items-center gap-1">
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => updateQty(item.skuId, item.quantity - 1)}><Minus className="h-3 w-3"/></Button>
-              <span className="w-7 text-center text-sm">{item.quantity}</span>
-              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => updateQty(item.skuId, item.quantity + 1)}><Plus className="h-3 w-3"/></Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeItem(item.skuId)}><Trash2 className="h-3 w-3"/></Button>
+            <div className="flex flex-col items-end gap-1">
+              <QuantityControl value={item.quantity} onChange={(quantity) => updateQty(item.skuId, quantity)} />
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => removeItem(item.skuId)}><Trash2 className="h-3 w-3 mr-1"/>Remove</Button>
             </div>
             {!compact && <span className="ml-2 w-24 text-right font-bold">{formatCurrency(item.unitPrice * item.quantity)}</span>}
           </CardContent>

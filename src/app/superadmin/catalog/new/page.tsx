@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, Trash2, Save, Loader2, Package, Barcode } from "lucide-react";
 import Link from "next/link";
+import { paiseToRupees, rupeesToPaise } from "@/lib/utils";
 
 interface SkuForm {
   key: string;
@@ -24,6 +25,10 @@ interface SkuForm {
 
 function emptySku(): SkuForm {
   return { key: crypto.randomUUID(), sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5 };
+}
+
+function paiseToRupeesNumber(paise: number): number {
+  return Number(paiseToRupees(paise));
 }
 
 function NewProductForm() {
@@ -56,7 +61,7 @@ function NewProductForm() {
           setProduct({ name: found.name || "", description: found.description || "", brand: found.brand || "", categoryId: found.categoryId || "cat-grocery", imageUrl: found.imageUrl || "" });
           const productSkus = (Array.isArray(allSkus) ? allSkus : []).filter((s: any) => s.productId === editId);
           if (productSkus.length > 0) {
-            setSkus(productSkus.map((s: any) => ({ key: crypto.randomUUID(), id: s.id, sku: s.sku || "", barcode: s.barcode || "", unit: s.unit || "piece", mrp: s.mrp || 0, sellingPrice: s.sellingPrice || 0, costPrice: s.costPrice || 0, taxType: s.taxType || "GST", taxRate: s.taxRate ?? 5 })));
+            setSkus(productSkus.map((s: any) => ({ key: crypto.randomUUID(), id: s.id, sku: s.sku || "", barcode: s.barcode || "", unit: s.unit || "piece", mrp: paiseToRupeesNumber(s.mrp || 0), sellingPrice: paiseToRupeesNumber(s.sellingPrice || 0), costPrice: paiseToRupeesNumber(s.costPrice || 0), taxType: s.taxType || "GST", taxRate: s.taxRate ?? 5 })));
           }
         } else {
           setError("Product not found");
@@ -129,7 +134,7 @@ function NewProductForm() {
         fetch("/api/skus", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...(sku.id ? { id: sku.id } : {}), productId, sku: sku.sku, barcode: sku.barcode || null, unit: sku.unit, mrp: sku.mrp, sellingPrice: sku.sellingPrice, costPrice: sku.costPrice, taxType: sku.taxType, taxRate: sku.taxRate }),
+          body: JSON.stringify({ ...(sku.id ? { id: sku.id } : {}), productId, sku: sku.sku, barcode: sku.barcode || null, unit: sku.unit, mrp: rupeesToPaise(sku.mrp), sellingPrice: rupeesToPaise(sku.sellingPrice), costPrice: rupeesToPaise(sku.costPrice), taxType: sku.taxType, taxRate: sku.taxRate }),
         })
       ));
 
@@ -156,7 +161,7 @@ function NewProductForm() {
         <Link href="/superadmin/catalog" className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h1 className="text-xl font-bold">{isEdit ? "Edit Product" : "New Product"}</h1>
+        <span className="text-sm text-muted-foreground">{isEdit ? "Edit Product" : "New Product"}</span>
       </div>
 
       {error && (
@@ -210,7 +215,7 @@ function NewProductForm() {
 
       {/* SKUs Section */}
       <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
-        <h2 className="text-xl font-bold">SKUs ({skus.length})</h2>
+        <p className="text-sm font-semibold">SKUs ({skus.length})</p>
         <Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={addSku}>
           <Plus className="h-4 w-4 mr-1" />Add SKU
         </Button>
@@ -275,18 +280,18 @@ function NewProductForm() {
                     onChange={e => updateSku(sku.key, "taxRate", Number(e.target.value) || 0)} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">Cost Price (paise) *</label>
-                  <Input type="number" placeholder="e.g. 28000" value={sku.costPrice || ""}
+                  <label className="text-xs font-medium block mb-1">Cost Price (₹) *</label>
+                  <Input type="number" min="0" step="0.01" placeholder="e.g. 280" value={sku.costPrice || ""}
                     onChange={e => updateSku(sku.key, "costPrice", Number(e.target.value) || 0)} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">Selling Price (paise) *</label>
-                  <Input type="number" placeholder="e.g. 32000" value={sku.sellingPrice || ""}
+                  <label className="text-xs font-medium block mb-1">Selling Price (₹) *</label>
+                  <Input type="number" min="0" step="0.01" placeholder="e.g. 320" value={sku.sellingPrice || ""}
                     onChange={e => updateSku(sku.key, "sellingPrice", Number(e.target.value) || 0)} />
                 </div>
                 <div>
-                  <label className="text-xs font-medium block mb-1">MRP (paise)</label>
-                  <Input type="number" placeholder="e.g. 35000" value={sku.mrp || ""}
+                  <label className="text-xs font-medium block mb-1">MRP (₹)</label>
+                  <Input type="number" min="0" step="0.01" placeholder="e.g. 350" value={sku.mrp || ""}
                     onChange={e => updateSku(sku.key, "mrp", Number(e.target.value) || 0)} />
                 </div>
               </div>

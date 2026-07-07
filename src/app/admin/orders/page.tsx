@@ -7,24 +7,31 @@ import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
-  DRAFT:'outline', PENDING_OWNER_APPROVAL:'warning', SUBMITTED:'default', APPROVED:'warning', ALLOCATED:'warning', PICKING:'warning', PACKED:'warning', SHIPPED:'default', DELIVERED:'success', CANCELLED:'destructive', REJECTED:'destructive'
+  DRAFT:'outline', PENDING_OTP:'warning', OTP_VERIFIED:'default', PENDING_CF_APPROVAL:'warning', CF_APPROVED:'default', CF_REJECTED:'destructive', ALLOCATED:'warning', PICKING:'warning', PACKED:'warning', SHIPPED:'default', DELIVERED:'success', CANCELLED:'destructive', REJECTED:'destructive'
 };
 const allowedTransitions: Record<string, string[]> = {
-  PENDING_OWNER_APPROVAL: ['SUBMITTED', 'REJECTED', 'CANCELLED'],
-  SUBMITTED: ['APPROVED', 'REJECTED', 'CANCELLED'],
-  APPROVED: ['ALLOCATED', 'CANCELLED'], ALLOCATED: ['PICKING', 'CANCELLED'],
-  PICKING: ['PACKED', 'CANCELLED'], PACKED: ['SHIPPED', 'CANCELLED'], SHIPPED: ['DELIVERED'],
+  PENDING_OTP: ['CANCELLED'], OTP_VERIFIED: ['PENDING_CF_APPROVAL', 'CF_APPROVED', 'CANCELLED'],
+  PENDING_CF_APPROVAL: ['CF_APPROVED', 'CF_REJECTED', 'CANCELLED'], CF_APPROVED: ['ALLOCATED', 'CANCELLED'],
+  ALLOCATED: ['PICKING', 'CANCELLED'], PICKING: ['PACKED', 'CANCELLED'], PACKED: ['SHIPPED', 'CANCELLED'], SHIPPED: ['DELIVERED'],
 };
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [selectedStore, setSelectedStore] = useState('');
+  const [distributors, setDistributors] = useState<any[]>([]);
+  const [selectedDistributor, setSelectedDistributor] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetch('/api/stores').then(r => r.json()).then(d => { const arr = Array.isArray(d) ? d : []; setStores(arr); if (arr.length) setSelectedStore(arr[0].id); }); }, []);
-  async function loadOrders() { if (!selectedStore) return; setLoading(true); try { const res = await fetch('/api/orders?storeId='+selectedStore); const data = await res.json(); setOrders(Array.isArray(data) ? data : []); } catch(e){} finally { setLoading(false); } }
-  useEffect(() => { loadOrders(); }, [selectedStore]);
+  useEffect(() => { fetch('/api/distributors').then(r => r.json()).then(d => { const arr = Array.isArray(d) ? d : []; setDistributors(arr); if (arr.length) setSelectedDistributor(arr[0].id); setLoading(arr.length === 0 ? false : true); }); }, []);
+  async function loadOrders() { if (!selectedDistributor) return; setLoading(true); try { const res = await fetch('/api/orders?distributorId='+selectedDistributor); const data = await res.json(); setOrders(Array.isArray(data) ? data : []); } catch(e){} finally { setLoading(false); } }
+  useEffect(() => { loadOrders(); }, [selectedDistributor]);
+
+  if (distributors.length === 0 && !loading) {
+    return (
+      <div className="space-y-6">
+        <Card className="p-4 text-center"><p className="text-muted-foreground">No distributors found. Create distributors first from the Distributors page.</p></Card>
+      </div>
+    );
+  }
 
   async function handleTransition(orderId: string, toStatus: string) {
     await fetch('/api/orders/transition', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ orderId, toStatus, idempotencyKey: crypto.randomUUID() }) });
@@ -34,9 +41,9 @@ export default function AdminOrdersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <label className="text-sm font-medium">Store:</label>
-        <select className="flex h-10 rounded-md border px-3 py-2 text-sm w-full sm:w-64" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        <label className="text-sm font-medium">Distributor:</label>
+        <select className="flex h-10 rounded-md border px-3 py-2 text-sm w-full sm:w-64" value={selectedDistributor} onChange={e => setSelectedDistributor(e.target.value)}>
+          {distributors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
       {loading ? <p className="text-muted-foreground">Loading...</p> : (

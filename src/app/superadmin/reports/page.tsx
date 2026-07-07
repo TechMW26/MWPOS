@@ -5,37 +5,37 @@ import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Store, Package, AlertTriangle, TrendingUp, DollarSign, ShoppingCart } from 'lucide-react';
+import { Loader2, Users, Package, AlertTriangle, TrendingUp, DollarSign, ShoppingCart } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<any[]>([]);
+  const [distributors, setDistributors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [inventory, setInventory] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
-  const [selectedStore, setSelectedStore] = useState('store-dist-001');
+  const [selectedDistributor, setSelectedDistributor] = useState('');
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/stores').then(r => r.json()),
+      fetch('/api/distributors').then(r => r.json()),
       fetch('/api/products').then(r => r.json()),
       fetch('/api/users').then(r => r.json()),
-      fetch('/api/inventory?storeId=store-dist-001').then(r => r.json()).catch(() => []),
-    ]).then(([s, p, u, inv]) => {
-      setStores(Array.isArray(s) ? s : []);
+    ]).then(([d, p, u]) => {
+      const dList = Array.isArray(d) ? d : [];
+      setDistributors(dList);
       setProducts(Array.isArray(p) ? p : []);
       setUsers(Array.isArray(u) ? u : []);
-      setInventory(Array.isArray(inv) ? inv : []);
+      if (dList.length > 0) setSelectedDistributor(dList[0].id);
       setLoading(false);
     });
   }, []);
 
   useEffect(() => {
-    if (selectedStore) {
-      fetch('/api/inventory?storeId=' + selectedStore).then(r => r.json()).then(d => setInventory(Array.isArray(d) ? d : []));
+    if (selectedDistributor) {
+      fetch('/api/inventory?storeId=' + selectedDistributor).then(r => r.json()).then(d => setInventory(Array.isArray(d) ? d : []));
     }
-  }, [selectedStore]);
+  }, [selectedDistributor]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -44,36 +44,40 @@ export default function ReportsPage() {
     </div>
   );
 
-  const distStores = stores.filter(s => s.type === 'DISTRIBUTION');
-  const custStores = stores.filter(s => s.type === 'CUSTOMER');
+  if (distributors.length === 0) return (
+    <div className="space-y-6">
+      <Card className="p-4 text-center"><p className="text-muted-foreground">No distributors found. Create distributors first to view reports.</p></Card>
+    </div>
+  );
+
   const totalStock = inventory.reduce((s: number, i: any) => s + i.onHand, 0);
   const totalReserved = inventory.reduce((s: number, i: any) => s + i.reserved, 0);
   const lowStock = inventory.filter((i: any) => i.onHand > 0 && i.available <= (i.reorderThreshold || 10));
   const admins = users.filter(u => u.role === 'ADMIN');
-  const managers = users.filter(u => u.role === 'STORE_MANAGER');
-  const pendingManagers = managers.filter(u => u.approvalStatus === 'PENDING');
+  const asms = users.filter(u => u.role === 'ASM');
+  const pendingAsms = asms.filter(u => u.approvalStatus === 'PENDING');
 
   return (
     <div className="space-y-6">
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Distribution Hubs" value={distStores.length} icon={<Store className="h-5 w-5" />} />
-        <StatCard title="Customer Stores" value={custStores.length} icon={<ShoppingCart className="h-5 w-5" />} />
+        <StatCard title="Distributors" value={distributors.length} icon={<Users className="h-5 w-5" />} />
         <StatCard title="Total Products" value={products.length} icon={<Package className="h-5 w-5" />} />
         <StatCard title="Total Users" value={users.length} icon={<TrendingUp className="h-5 w-5" />} />
+        <StatCard title="ASMs" value={asms.length} icon={<ShoppingCart className="h-5 w-5" />} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard title="Active Admins" value={admins.length} />
-        <StatCard title="Store Managers" value={managers.length} />
-        <StatCard title="Pending Approvals" value={pendingManagers.length} trend={pendingManagers.length > 0 ? 'down' : 'neutral'}
-          description={pendingManagers.length > 0 ? `${pendingManagers.length} awaiting approval` : 'All approved'} />
+        <StatCard title="ASMs" value={asms.length} />
+        <StatCard title="Pending Approvals" value={pendingAsms.length} trend={pendingAsms.length > 0 ? 'down' : 'neutral'}
+          description={pendingAsms.length > 0 ? `${pendingAsms.length} awaiting approval` : 'All approved'} />
       </div>
 
       <div className="flex items-center gap-4">
-        <label className="text-sm font-medium">Inventory Store:</label>
-        <select className="flex h-10 rounded-md border px-3 py-2 text-sm w-full sm:w-64" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-          {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        <label className="text-sm font-medium">Distributor:</label>
+        <select className="flex h-10 rounded-md border px-3 py-2 text-sm w-full sm:w-64" value={selectedDistributor} onChange={e => setSelectedDistributor(e.target.value)}>
+          {distributors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
       </div>
 

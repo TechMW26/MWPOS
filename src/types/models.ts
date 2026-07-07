@@ -8,8 +8,10 @@ import type {
   ApprovalStatus,
   StoreType,
   OrderStatus,
+  OtpVerificationStatus,
   PaymentMethod,
   OrderPaymentMode,
+  OrderPaymentProofType,
   PaymentStatus,
   InventoryMovementType,
   RegisterSessionStatus,
@@ -24,27 +26,63 @@ export interface User {
   phone: string | null;
   displayName: string;
   role: UserRole;
-  approvalStatus: ApprovalStatus | null; // for STORE_MANAGER
+  approvalStatus: ApprovalStatus | null; // for ASM
   isActive: boolean;
   avatarUrl: string | null;
+  districtId: string | null; // for ASM — assigned district
+  cfId: string | null; // for ASM — assigned C&F
   createdAt: string;
   updatedAt: string;
   lastLoginAt: string | null;
 }
 
-// ─── User Store Membership ───────────────────────────────────
-export interface UserStoreMembership {
+// ─── User Distributor Membership ─────────────────────────────
+export interface UserDistributorMembership {
   uid: string;
-  storeId: string;
+  distributorId: string;
   role: string; // "OWNER" | "STAFF" | etc.
   joinedAt: string;
 }
 
-// ─── Store ───────────────────────────────────────────────────
+// ─── District ────────────────────────────────────────────────
+export interface District {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Distributor ─────────────────────────────────────────────
+export interface Distributor {
+  id: string;
+  name: string;
+  districtId: string;
+  ownerUid: string | null;
+  logoUrl: string | null;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  phone: string;
+  email: string | null;
+  gstin: string | null;
+  approvalStatus: ApprovalStatus;
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Store (Distribution Center) ─────────────────────────────
 export interface Store {
   id: string;
   name: string;
   type: StoreType;
+  districtId?: string | null;
   ownerUid: string | null;
   managerUid: string | null;
   logoUrl: string | null;
@@ -184,14 +222,24 @@ export interface CartItem {
 // ─── Order ───────────────────────────────────────────────────
 export interface Order {
   id: string;
-  customerStoreId: string; // destination
-  sourceStoreId: string; // distribution store
-  customerId: string; // uid who placed
+  distributorId: string; // destination distributor
+  sourceStoreId: string; // distribution store (C&F's warehouse)
+  asmId: string; // ASM who placed the order
   placedByUid: string;
-  ownerApprovalStatus: "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
-  ownerApprovalRequestId: string | null;
+  otpStatus: OtpVerificationStatus;
+  otpRequestId: string | null;
+  otpExpiresAt: string | null;
+  otpChannel: string | null; // "email" | "whatsapp"
+  otpDestination: string | null;
+  cfId: string | null; // assigned C&F for approval
+  cfApprovalStatus: "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
   paymentMode: OrderPaymentMode;
-  paymentProvider: "RAZORPAY" | "KHATA" | null;
+  paymentProvider: "RAZORPAY" | "KHATA" | "ONLINE" | "CHEQUE" | null;
+  paymentProofType: OrderPaymentProofType | null;
+  paymentProofUrl: string | null;
+  paymentProofFileName: string | null;
+  paymentProofMimeType: string | null;
+  paymentReference: string | null;
   paymentStatus: PaymentStatus;
   paidAmountPaise: number;
   khataEntryId: string | null;
@@ -244,20 +292,32 @@ export interface OrderStatusChange {
   notes: string | null;
 }
 
-// ─── Order Owner Approval Request ───────────────────────────
-export interface OrderApprovalRequest {
+// ─── Order OTP Verification Request ──────────────────────────
+export interface OrderOtpRequest {
   id: string;
   orderId: string;
-  storeId: string;
-  ownerUid: string;
+  distributorId: string;
+  distributorPhone: string | null;
+  distributorEmail: string | null;
   requestedByUid: string;
-  channel: "email" | "phone" | "app";
-  destination: string | null;
-  hashedOtp: string | null;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
-  expiresAt: string | null;
+  channels: string[]; // ["email", "whatsapp"]
+  hashedOtp: string;
+  status: OtpVerificationStatus;
+  attempts: number;
+  maxAttempts: number;
+  expiresAt: string;
   createdAt: string;
-  respondedAt: string | null;
+  verifiedAt: string | null;
+}
+
+// ─── C&F Assignment ──────────────────────────────────────────
+export interface CfAssignment {
+  id: string;
+  cfUid: string;
+  asmUid: string;
+  districtId: string | null;
+  assignedBy: string;
+  createdAt: string;
 }
 
 // ─── Fulfillment ─────────────────────────────────────────────
@@ -436,5 +496,8 @@ export interface SessionData {
   displayName: string;
   role: UserRole;
   storeIds: string[];
+  distributorIds: string[];
+  districtId: string | null; // for ASM
+  cfId: string | null; // for ASM's assigned C&F
   approvalStatus: ApprovalStatus | null;
 }

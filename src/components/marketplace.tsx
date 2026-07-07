@@ -1,14 +1,17 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QuantityControl } from '@/components/ui/quantity-control';
+import { Modal } from '@/components/ui/modal';
 import { formatCurrency } from '@/lib/utils';
 import { useToast, useSound } from '@/lib/hooks/use-toast';
-import { Search, ShoppingCart, Plus, Minus, Trash2, Send, Loader2, Package, Store } from 'lucide-react';
+import { Search, ShoppingCart, Plus, Trash2, Send, Loader2, Package, Store } from 'lucide-react';
 
 interface CartItem {
   skuId: string;
@@ -23,10 +26,11 @@ interface CartItem {
 
 interface MarketplaceProps {
   storeId?: string;
-  role: 'SUPERADMIN' | 'ADMIN' | 'STORE_MANAGER' | 'CUSTOMER';
+  role: 'SUPERADMIN' | 'ADMIN' | 'ASM' | 'C_AND_F' | 'STORE_MANAGER' | 'CUSTOMER' | 'DISTRIBUTOR';
 }
 
 export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
+  const router = useRouter();
   const [skus, setSkus] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
@@ -38,23 +42,19 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
   const [orderMsg, setOrderMsg] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'browse' | 'cart'>('browse');
+  const [selectedSku, setSelectedSku] = useState<any | null>(null);
+  const [selectedQty, setSelectedQty] = useState(1);
   const { addToast } = useToast();
   const { play } = useSound();
 
   useEffect(() => {
     async function load() {
       try {
-        const [skuRes, prodRes, storeRes] = await Promise.all([
-          fetch('/api/skus'),
-          fetch('/api/products'),
-          fetch('/api/stores?type=CUSTOMER'),
-        ]);
-        const s = await skuRes.json();
-        const p = await prodRes.json();
-        const st = await storeRes.json();
-        setSkus(Array.isArray(s) ? s : []);
-        setProducts(Array.isArray(p) ? p : []);
-        const storeList = Array.isArray(st) ? st : [];
+        const res = await fetch(role === 'CUSTOMER' || role === 'DISTRIBUTOR' ? '/api/marketplace?storeType=DISTRIBUTOR&mine=1' : '/api/marketplace?storeType=DISTRIBUTOR');
+        const data = await res.json();
+        setSkus(Array.isArray(data.skus) ? data.skus : []);
+        setProducts(Array.isArray(data.products) ? data.products : []);
+        const storeList = Array.isArray(data.stores) ? data.stores : [];
         setStores(storeList);
         if (!propStoreId && storeList.length > 0) setSelectedStore(storeList[0].id);
       } catch {} finally { setLoading(false); }
@@ -65,16 +65,17 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
   const storeName = stores.find(s => s.id === selectedStore)?.name || '';
 
   const grouped = useMemo(() => {
+    const productsById = new Map(products.map((product) => [product.id, product]));
     const map: Record<string, { product: any; skus: any[] }> = {};
     const filtered = skus.filter(s => {
-      const prod = products.find(p => p.id === s.productId);
+      const prod = productsById.get(s.productId);
       const name = (prod?.name || s.sku || '').toLowerCase();
       return name.includes(search.toLowerCase());
     });
     filtered.forEach(sku => {
       const pid = sku.productId;
       if (!map[pid]) {
-        const prod = products.find(p => p.id === pid);
+        const prod = productsById.get(pid);
         map[pid] = { product: prod || { id: pid, name: sku.sku, imageUrl: null }, skus: [] };
       }
       map[pid].skus.push(sku);
@@ -82,14 +83,24 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
     return Object.values(map);
   }, [skus, products, search]);
 
-  function addToCart(sku: any) {
+  function openQuantityModal(sku: any) {
+    setSelectedSku(sku);
+    setSelectedQty(Math.max(1, cart.find(c => c.skuId === sku.id)?.quantity || 1));
+  }
+
+  function addToCart(sku: any, quantity: number) {
+    const qty = Math.max(1, Math.floor(quantity));
     const prod = products.find(p => p.id === sku.productId);
+    const unitPrice = Number.isFinite(Number(sku.sellingPrice)) ? Math.round(Number(sku.sellingPrice)) : 0;
+    const taxRate = Number.isFinite(Number(sku.taxRate)) ? Math.min(100, Math.max(0, Number(sku.taxRate))) : 0;
     const existing = cart.find(c => c.skuId === sku.id);
     if (existing) {
-      setCart(cart.map(c => c.skuId === sku.id ? { ...c, quantity: c.quantity + 1 } : c));
+      setCart(cart.map(c => c.skuId === sku.id ? { ...c, quantity: c.quantity + qty } : c));
     } else {
-      setCart([...cart, { skuId: sku.id, productId: sku.productId, productName: prod?.name || sku.sku, sku: sku.sku, quantity: 1, unitPrice: sku.sellingPrice, taxRate: sku.taxRate, imageUrl: prod?.imageUrl || null }]);
+      setCart([...cart, { skuId: sku.id, productId: sku.productId, productName: prod?.name || sku.sku, sku: sku.sku, quantity: qty, unitPrice, taxRate, imageUrl: prod?.imageUrl || null }]);
     }
+    setSelectedSku(null);
+    addToast({ title: 'Added to cart', message: `${qty} × ${prod?.name || sku.sku} added to your cart.`, type: 'success' });
   }
 
   function updateQty(skuId: string, qty: number) {
@@ -104,13 +115,17 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
   const total = subtotal + taxTotal;
 
   async function placeOrder() {
-    if (cart.length === 0 || !selectedStore) return;
+    if (cart.length === 0) return;
+    if (!selectedStore) {
+      addToast({ title: 'Select distributor', message: 'No distributor is linked or selected for this order.', type: 'error' });
+      return;
+    }
     setPlacing(true); setOrderMsg('');
     try {
       const res = await fetch('/api/orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerStoreId: selectedStore,
+          distributorId: selectedStore,
           paymentMode,
           items: cart.map(c => ({ skuId: c.skuId, productId: c.productId, quantity: c.quantity })),
           idempotencyKey: crypto.randomUUID(),
@@ -121,6 +136,10 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
       play('order');
       addToast({ title: 'Order Placed!', message: `#${data.orderId?.slice(0,8) || data.id?.slice(0,8)} — ${formatCurrency(total)}`, type: 'success' });
       setCart([]);
+      const orderId = data.orderId || data.id;
+      if (paymentMode === 'PAY_LATER' && orderId) {
+        router.push(role === 'ASM' ? `/asm/orders` : `/manager/orders`);
+      }
     } catch (e: any) {
       addToast({ title: 'Order Failed', message: e.message || 'Please try again', type: 'error' });
     } finally { setPlacing(false); }
@@ -138,21 +157,17 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold">Market Place</h1>
-          <div className="flex rounded-md border overflow-hidden">
-            <button className={`px-3 py-1.5 text-sm ${activeTab === 'browse' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setActiveTab('browse')}><Package className="h-3 w-3 inline mr-1" />Browse</button>
-            <button className={`px-3 py-1.5 text-sm ${activeTab === 'cart' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setActiveTab('cart')}><ShoppingCart className="h-3 w-3 inline mr-1" />Cart ({cart.length})</button>
-          </div>
+        <div className="flex rounded-md border overflow-hidden">
+          <button className={`px-3 py-1.5 text-sm ${activeTab === 'browse' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setActiveTab('browse')}><Package className="h-3 w-3 inline mr-1" />Browse</button>
+          <button className={`px-3 py-1.5 text-sm ${activeTab === 'cart' ? 'bg-primary text-primary-foreground' : ''}`} onClick={() => setActiveTab('cart')}><ShoppingCart className="h-3 w-3 inline mr-1" />Cart ({cart.length})</button>
         </div>
-        {role !== 'CUSTOMER' && (
+        {role !== 'CUSTOMER' && role !== 'DISTRIBUTOR' && (
           <select className="h-10 rounded-md border px-3 py-2 text-sm w-full sm:w-56" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
             {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
-        {role === 'CUSTOMER' && storeName && (
+        {(role === 'CUSTOMER' || role === 'DISTRIBUTOR') && storeName && (
           <Badge variant="outline" className="gap-1"><Store className="h-3 w-3" />{storeName}</Badge>
         )}
       </div>
@@ -176,11 +191,9 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
                       <p className="text-xs text-muted-foreground">SKU: {item.sku}</p>
                       <p className="text-sm font-medium">{formatCurrency(item.unitPrice)} × {item.quantity}</p>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => updateQty(item.skuId, item.quantity - 1)}><Minus className="h-3 w-3" /></Button>
-                      <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
-                      <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => updateQty(item.skuId, item.quantity + 1)}><Plus className="h-3 w-3" /></Button>
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive ml-1" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3" /></Button>
+                    <div className="flex flex-col items-end gap-2">
+                      <QuantityControl value={item.quantity} onChange={(quantity) => updateQty(item.skuId, quantity)} />
+                      <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3 mr-1" />Remove</Button>
                     </div>
                   </div>
                 ))}
@@ -235,7 +248,7 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
                         <p className="text-sm font-mono font-medium">{sku.sku}</p>
                         <p className="text-xs text-muted-foreground">{sku.unit} · {formatCurrency(sku.sellingPrice)}</p>
                       </div>
-                      <Button size="sm" onClick={() => addToCart(sku)}><Plus className="h-3 w-3 mr-1" />Add</Button>
+                      <Button size="sm" onClick={() => openQuantityModal(sku)}><Plus className="h-3 w-3 mr-1" />Add</Button>
                     </div>
                   ))}
                 </CardContent>
@@ -251,6 +264,31 @@ export function Marketplace({ storeId: propStoreId, role }: MarketplaceProps) {
           )}
         </>
       )}
+      <Modal
+        open={Boolean(selectedSku)}
+        title="Add quantity"
+        onClose={() => setSelectedSku(null)}
+        className="max-w-md"
+      >
+        {selectedSku && (
+          <div className="space-y-5">
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <p className="font-medium">{products.find(p => p.id === selectedSku.productId)?.name || selectedSku.sku}</p>
+              <p className="text-sm text-muted-foreground">{selectedSku.sku} · {selectedSku.unit} · {formatCurrency(selectedSku.sellingPrice)}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Quantity</label>
+              <QuantityControl value={selectedQty} onChange={(qty) => setSelectedQty(Math.max(1, qty))} />
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setSelectedSku(null)}>Cancel</Button>
+              <Button type="button" onClick={() => addToCart(selectedSku, selectedQty)}>
+                <Plus className="mr-2 h-4 w-4" />Add to cart
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

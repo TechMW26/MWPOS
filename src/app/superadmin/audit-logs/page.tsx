@@ -41,11 +41,11 @@ export default function AuditLogsPage() {
           <span className="ml-3 text-muted-foreground">Loading audit trail...</span>
         </div>
       ) : error ? (
-        <Card className="border-destructive"><CardContent className="py-8 text-center">
+        <Card className="border-destructive"><CardContent className="p-4 text-center">
           <p className="text-destructive font-medium">{error}</p>
         </CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-16 text-center">
+        <Card><CardContent className="p-4 text-center">
           <Shield className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <p className="text-lg font-medium text-muted-foreground">No audit logs yet</p>
           <p className="text-sm text-muted-foreground mt-1">

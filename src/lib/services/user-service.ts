@@ -43,8 +43,10 @@ export async function findOrCreateUser(input: {
     email: input.channel === "email" ? fieldValue : null,
     phone: input.channel === "phone" ? fieldValue : null,
     displayName: input.displayName?.trim() || fieldValue,
-    role: input.role ?? "CUSTOMER",
-    approvalStatus: null, // only STORE_MANAGER needs approval
+    role: input.role ?? "ASM",
+    districtId: null,
+    cfId: null,
+    approvalStatus: null, // only ASM needs approval
     isActive: true,
     avatarUrl: null,
     createdAt: now,
@@ -62,31 +64,49 @@ export async function findOrCreateCustomerOwner(input: {
   email?: string | null;
   phone?: string | null;
   displayName?: string | null;
+  role?: UserRole;
 }): Promise<User | null> {
   if (input.ownerUid) {
     const existing = await getUser(input.ownerUid);
     if (!existing) throw new Error("Selected owner user was not found");
+    if (input.role && existing.role !== input.role) {
+      const updatedAt = new Date().toISOString();
+      await adminDb.ref(`users/${existing.uid}`).update({ role: input.role, approvalStatus: null, updatedAt });
+      return { ...existing, role: input.role, approvalStatus: null, updatedAt };
+    }
     return existing;
   }
 
   const email = input.email?.toLowerCase().trim();
   if (email) {
-    return findOrCreateUser({
+    const user = await findOrCreateUser({
       channel: "email",
       destination: email,
       displayName: input.displayName,
-      role: "CUSTOMER",
+      role: input.role ?? "DISTRIBUTOR",
     });
+    if (input.role && user.role !== input.role) {
+      const updatedAt = new Date().toISOString();
+      await adminDb.ref(`users/${user.uid}`).update({ role: input.role, approvalStatus: null, updatedAt });
+      return { ...user, role: input.role, approvalStatus: null, updatedAt };
+    }
+    return user;
   }
 
   const phone = input.phone?.trim();
   if (phone) {
-    return findOrCreateUser({
+    const user = await findOrCreateUser({
       channel: "phone",
       destination: phone,
       displayName: input.displayName,
-      role: "CUSTOMER",
+      role: input.role ?? "DISTRIBUTOR",
     });
+    if (input.role && user.role !== input.role) {
+      const updatedAt = new Date().toISOString();
+      await adminDb.ref(`users/${user.uid}`).update({ role: input.role, approvalStatus: null, updatedAt });
+      return { ...user, role: input.role, approvalStatus: null, updatedAt };
+    }
+    return user;
   }
 
   return null;
@@ -95,13 +115,15 @@ export async function findOrCreateCustomerOwner(input: {
 // ─── Build Session Data ──────────────────────────────────────
 
 export async function buildSessionData(user: User): Promise<SessionData> {
-  // Get store memberships
+  // Get store and distributor memberships
   const membershipsSnap = await adminDb.ref(`userStoreMemberships/${user.uid}`).get();
   const storeIds: string[] = [];
+  const distributorIds: string[] = [];
 
   if (membershipsSnap.exists()) {
     const memberships = membershipsSnap.val() as Record<string, unknown>;
     storeIds.push(...Object.keys(memberships));
+    distributorIds.push(...Object.keys(memberships));
   }
 
   return {
@@ -111,6 +133,9 @@ export async function buildSessionData(user: User): Promise<SessionData> {
     displayName: user.displayName,
     role: user.role,
     storeIds,
+    distributorIds,
+    districtId: user.districtId,
+    cfId: user.cfId,
     approvalStatus: user.approvalStatus,
   };
 }
@@ -122,6 +147,8 @@ export async function createUser(input: {
   phone: string | null;
   displayName: string;
   role: string;
+  districtId?: string | null;
+  createdByRole?: string | null;
 }): Promise<User> {
   const uid = uuidv4();
   const now = new Date().toISOString();
@@ -142,7 +169,9 @@ export async function createUser(input: {
     phone: input.phone?.trim() ?? null,
     displayName: input.displayName.trim(),
     role: input.role as UserRole,
-    approvalStatus: input.role === "STORE_MANAGER" ? "PENDING" : null,
+    districtId: input.districtId ?? null,
+    cfId: null,
+    approvalStatus: input.role === "ASM" && input.createdByRole !== "ADMIN" && input.createdByRole !== "SUPERADMIN" ? "PENDING" : null,
     isActive: true,
     avatarUrl: null,
     createdAt: now,

@@ -24,7 +24,7 @@ export function DataTable<T extends Record<string, unknown>>({
 }: DataTableProps<T>) {
   if (data.length === 0) {
     return (
-      <div className="rounded-lg border bg-card p-8 text-center shadow-sm sm:p-12">
+      <div className="rounded-lg border bg-card p-4 text-center shadow-sm">
         <p className="text-muted-foreground">{emptyMessage}</p>
       </div>
     );

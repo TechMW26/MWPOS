@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const { orderId, toStatus, notes } = parsed.data;
     let result;
     switch (toStatus) {
-      case "APPROVED": result = await approveOrder(orderId, session, notes); break;
+      case "CF_APPROVED": result = await approveOrder(orderId, session, notes); break;
       case "CANCELLED": result = await cancelOrder(orderId, session, notes); break;
       case "REJECTED": result = await rejectOrder(orderId, session, notes); break;
       case "SHIPPED": result = await fulfillOrder(orderId, session); break;

@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   const role = searchParams.get("role") as string | null;
   const approvalStatus = searchParams.get("approvalStatus") as string | null;
   const users = await listUsers({ role: role as never, approvalStatus: approvalStatus as never });
-  return NextResponse.json(users.map(({ uid, email, phone, displayName, role, approvalStatus, isActive, createdAt, lastLoginAt }) => ({ uid, email, phone, displayName, role, approvalStatus, isActive, createdAt, lastLoginAt })));
+  return NextResponse.json(users.map(({ uid, email, phone, displayName, role, approvalStatus, isActive, districtId, cfId, createdAt, lastLoginAt }) => ({ uid, email, phone, displayName, role, approvalStatus, isActive, districtId, cfId, createdAt, lastLoginAt })));
 }
 
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { email, phone, displayName, role } = body;
+    const { email, phone, displayName, role, districtId } = body;
 
     if (!email && !phone) return NextResponse.json({ message: "Email or phone required" }, { status: 400 });
     if (!role) return NextResponse.json({ message: "Role required" }, { status: 400 });
@@ -33,6 +33,8 @@ export async function POST(request: Request) {
       phone: phone || null,
       displayName: displayName || email || phone,
       role,
+      districtId: districtId || null,
+      createdByRole: session.role,
     });
 
     return NextResponse.json(user, { status: 201 });
@@ -61,6 +63,21 @@ export async function PATCH(request: Request) {
     }
     if (parsed.data.displayName) {
       updates.displayName = parsed.data.displayName;
+    }
+    if (parsed.data.email !== undefined) {
+      updates.email = parsed.data.email;
+    }
+    if (parsed.data.phone !== undefined) {
+      updates.phone = parsed.data.phone;
+    }
+    if (parsed.data.districtId !== undefined) {
+      updates.districtId = parsed.data.districtId;
+    }
+    if (parsed.data.cfId !== undefined) {
+      updates.cfId = parsed.data.cfId;
+    }
+    if (parsed.data.avatarUrl !== undefined) {
+      updates.avatarUrl = parsed.data.avatarUrl;
     }
     if (parsed.data.isActive !== undefined) {
       updates.isActive = parsed.data.isActive;

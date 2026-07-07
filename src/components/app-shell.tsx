@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import { LogOut, Menu, Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useRouter } from "next/navigation";
 
 export interface AppNavItem {
   href: string;
@@ -279,14 +280,23 @@ function NavList({
 }
 
 function SignOutLink() {
+  const router = useRouter();
+
+  async function handleSignOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch { /* ignore */ }
+    router.push("/login");
+  }
+
   return (
-    <Link
-      href="/api/auth/logout"
+    <button
+      onClick={handleSignOut}
       title="Sign out"
-      className="mt-4 flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="mt-4 flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground w-full text-left"
     >
       <LogOut className="h-4 w-4" />
       Sign Out
-    </Link>
+    </button>
   );
 }

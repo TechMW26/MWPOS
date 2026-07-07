@@ -91,9 +91,12 @@ function getRedirectPath(role: string): string {
       return "/superadmin/dashboard";
     case "ADMIN":
       return "/admin/dashboard";
-    case "STORE_MANAGER":
-      return "/manager/dashboard";
-    case "CUSTOMER":
+    case "ASM":
+      return "/asm/dashboard";
+    case "C_AND_F":
+      return "/cf/dashboard";
+    case "DISTRIBUTOR":
+      return "/storefront/dashboard";
     default:
       return "/storefront/catalog";
   }

@@ -11,14 +11,14 @@ import { formatCurrency } from '@/lib/utils';
 import { DollarSign, TrendingUp, TrendingDown, FileText, Printer, Send, Mail } from 'lucide-react';
 
 interface KhataBookProps {
-  role: 'SUPERADMIN' | 'ADMIN' | 'STORE_MANAGER' | 'CUSTOMER';
-  managerStores?: string[];
+  role: 'SUPERADMIN' | 'ADMIN' | 'ASM' | 'C_AND_F' | 'DISTRIBUTOR' | 'STORE_MANAGER';
+  managerDistributors?: string[];
 }
 
-export function KhataBook({ role, managerStores }: KhataBookProps) {
+export function KhataBook({ role, managerDistributors }: KhataBookProps) {
   const [orders, setOrders] = useState<any[]>([]);
-  const [stores, setStores] = useState<any[]>([]);
-  const [selectedStore, setSelectedStore] = useState('ALL');
+  const [distributors, setDistributors] = useState<any[]>([]);
+  const [selectedDistributor, setSelectedDistributor] = useState('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('ALL');
@@ -28,15 +28,16 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
   useEffect(() => {
     async function load() {
       try {
-        const storeRes = await fetch('/api/stores' + (role === 'CUSTOMER' ? '?mine=1' : ''));
-        const storeList = Array.isArray(await storeRes.json()) ? await storeRes.json() : [];
-        const filtered = managerStores ? storeList.filter((s: any) => managerStores.includes(s.id)) : storeList;
-        setStores(filtered);
+        const distRes = await fetch('/api/distributors');
+        const distData = await distRes.json();
+        const dList = Array.isArray(distData) ? distData : [];
+        const filtered = managerDistributors ? dList.filter((d: any) => managerDistributors.includes(d.id)) : dList;
+        setDistributors(filtered);
 
         const allOrders: any[] = [];
-        for (const store of filtered) {
+        for (const d of filtered) {
           try {
-            const res = await fetch('/api/orders?storeId=' + store.id);
+            const res = await fetch('/api/orders?distributorId=' + d.id);
             const data = await res.json();
             if (Array.isArray(data)) allOrders.push(...data);
           } catch {}
@@ -45,11 +46,11 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
       } catch {} finally { setLoading(false); }
     }
     load();
-  }, [role, managerStores]);
+  }, [role, managerDistributors]);
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
-      if (selectedStore !== 'ALL' && o.customerStoreId !== selectedStore) return false;
+      if (selectedDistributor !== 'ALL' && o.distributorId !== selectedDistributor) return false;
       if (paymentFilter === 'KHATA' && o.paymentMode !== 'PAY_LATER') return false;
       if (paymentFilter === 'UPFRONT' && o.paymentMode !== 'UPFRONT') return false;
       if (paymentFilter === 'PAID' && o.paymentStatus !== 'COMPLETED') return false;
@@ -58,7 +59,7 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
       if (dateTo && new Date(o.createdAt) > new Date(dateTo + 'T23:59:59')) return false;
       return true;
     });
-  }, [orders, selectedStore, paymentFilter, dateFrom, dateTo]);
+  }, [orders, selectedDistributor, paymentFilter, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
     const khata = filtered.filter(o => o.paymentMode === 'PAY_LATER');
@@ -77,10 +78,10 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
   const storeWise = useMemo(() => {
     const map: Record<string, { name: string; total: number; khataDue: number; orders: number }> = {};
     filtered.forEach(o => {
-      const sid = o.customerStoreId;
+      const sid = o.distributorId;
       if (!map[sid]) {
-        const store = stores.find(s => s.id === sid);
-        map[sid] = { name: store?.name || sid, total: 0, khataDue: 0, orders: 0 };
+        const d = distributors.find(x => x.id === sid);
+        map[sid] = { name: d?.name || sid, total: 0, khataDue: 0, orders: 0 };
       }
       map[sid].total += o.totalPaise || 0;
       map[sid].orders += 1;
@@ -89,13 +90,13 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
       }
     });
     return Object.entries(map).map(([id, d]) => ({ id, ...d }));
-  }, [filtered, stores]);
+  }, [filtered, distributors]);
 
   const whatsappUrl = (phone: string, text: string) =>
     `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
 
   function printInvoice(order: any) {
-    const store = stores.find(s => s.id === order.customerStoreId);
+    const dist = distributors.find(d => d.id === order.distributorId);
     const win = window.open('', '_blank', 'width=700,height=800');
     if (!win) return;
     win.document.write(`
@@ -103,7 +104,7 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
       <style>body{font-family:Arial,sans-serif;padding:40px;max-width:700px;margin:0 auto} h1{color:#2563eb} .row{display:flex;justify-content:space-between;margin:8px 0} .total{font-size:20px;font-weight:bold;margin-top:16px;border-top:2px solid #000;padding-top:8px} @media print{body{padding:20px}}</style></head><body>
       <h1>MW-POS Invoice</h1>
       <div class="row"><span>Order:</span><strong>#${order.id?.slice(0,8)}</strong></div>
-      <div class="row"><span>Store:</span><strong>${store?.name || order.customerStoreId}</strong></div>
+      <div class="row"><span>Distributor:</span><strong>${dist?.name || order.distributorId}</strong></div>
       <div class="row"><span>Date:</span><strong>${new Date(order.createdAt).toLocaleDateString()}</strong></div>
       <div class="row"><span>Payment:</span><strong>${order.paymentMode === 'UPFRONT' ? 'Upfront' : 'Khata'}</strong></div>
       <div class="row"><span>Status:</span><strong>${order.status}</strong></div>
@@ -119,17 +120,17 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
   }
 
   function sendWhatsApp(order: any) {
-    const store = stores.find(s => s.id === order.customerStoreId);
-    const phone = store?.phone || '';
-    if (!phone) { alert('No phone number for this store'); return; }
-    const text = `MW-POS Invoice #${order.id?.slice(0,8)}\nStore: ${store?.name}\nAmount: ${formatCurrency(order.totalPaise)}\nDate: ${new Date(order.createdAt).toLocaleDateString()}\nPayment: ${order.paymentMode === 'UPFRONT' ? 'Upfront' : 'Khata'}\nStatus: ${order.status}`;
+    const dist = distributors.find(d => d.id === order.distributorId);
+    const phone = dist?.phone || '';
+    if (!phone) { alert('No phone number for this distributor'); return; }
+    const text = `MW-POS Invoice #${order.id?.slice(0,8)}\nDistributor: ${dist?.name}\nAmount: ${formatCurrency(order.totalPaise)}\nDate: ${new Date(order.createdAt).toLocaleDateString()}\nPayment: ${order.paymentMode === 'UPFRONT' ? 'Upfront' : 'Khata'}\nStatus: ${order.status}`;
     window.open(whatsappUrl(phone, text), '_blank');
   }
 
   async function sendEmailReceipt(order: any) {
-    const store = stores.find(s => s.id === order.customerStoreId);
-    const email = store?.email;
-    if (!email) { alert('No email for this store'); return; }
+    const dist = distributors.find(d => d.id === order.distributorId);
+    const email = dist?.email;
+    if (!email) { alert('No email for this distributor'); return; }
     try {
       await fetch('/api/auth/request-otp', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -146,10 +147,10 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
         <div>
-          <label className="text-xs font-medium block mb-1">Store</label>
-          <select className="h-10 rounded-md border px-3 py-2 text-sm" value={selectedStore} onChange={e => setSelectedStore(e.target.value)}>
-            <option value="ALL">All Stores</option>
-            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          <label className="text-xs font-medium block mb-1">Distributor</label>
+          <select className="h-10 rounded-md border px-3 py-2 text-sm" value={selectedDistributor} onChange={e => setSelectedDistributor(e.target.value)}>
+            <option value="ALL">All Distributors</option>
+            {distributors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </div>
         <div>
@@ -170,7 +171,7 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
           <label className="text-xs font-medium block mb-1">To</label>
           <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-10 w-40" />
         </div>
-        <Button variant="outline" size="sm" onClick={() => { setSelectedStore('ALL'); setPaymentFilter('ALL'); setDateFrom(''); setDateTo(''); }}>Clear</Button>
+        <Button variant="outline" size="sm" onClick={() => { setSelectedDistributor('ALL'); setPaymentFilter('ALL'); setDateFrom(''); setDateTo(''); }}>Clear</Button>
       </div>
 
       {/* Stats */}
@@ -183,10 +184,10 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
 
       {/* Store-wise breakdown */}
       <Card>
-        <CardHeader><CardTitle>Store-wise Breakdown</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Distributor-wise Breakdown</CardTitle></CardHeader>
         <CardContent>
           <DataTable data={storeWise} columns={[
-            { key: 'name', header: 'Store' },
+            { key: 'name', header: 'Distributor' },
             { key: 'orders', header: 'Orders' },
             { key: 'total', header: 'Total', render: (r) => formatCurrency(r.total) },
             { key: 'khataDue', header: 'Khata Due', render: (r) => <span className={r.khataDue > 0 ? 'text-destructive font-medium' : ''}>{formatCurrency(r.khataDue)}</span> },
@@ -200,9 +201,9 @@ export function KhataBook({ role, managerStores }: KhataBookProps) {
         <CardContent>
           <DataTable data={filtered.slice(0, 100)} columns={[
             { key: 'id', header: 'Order', render: (o) => <span className="font-mono text-xs">#{o.id?.slice(0,8)}</span> },
-            { key: 'customerStoreId', header: 'Store', render: (o) => {
-              const s = stores.find(st => st.id === o.customerStoreId);
-              return s?.name || o.customerStoreId?.slice(0,8);
+            { key: 'distributorId', header: 'Distributor', render: (o) => {
+              const d = distributors.find(x => x.id === o.distributorId);
+              return d?.name || o.distributorId?.slice(0,8);
             }},
             { key: 'createdAt', header: 'Date', render: (o) => new Date(o.createdAt).toLocaleDateString() },
             { key: 'totalPaise', header: 'Amount', render: (o) => formatCurrency(o.totalPaise) },

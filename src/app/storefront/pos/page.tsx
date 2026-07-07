@@ -4,8 +4,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { QuantityControl } from '@/components/ui/quantity-control';
 import { formatCurrency } from '@/lib/utils';
-import { ShoppingCart, Plus, Minus, Trash2, Banknote, CreditCard, Smartphone } from 'lucide-react';
+import { useToast } from '@/lib/hooks/use-toast';
+import { ShoppingCart, Trash2, Banknote, CreditCard, Smartphone } from 'lucide-react';
 
 interface CartItem { skuId: string; productName: string; sku: string; quantity: number; unitPrice: number; taxRate: number; }
 
@@ -15,6 +17,7 @@ export default function StorefrontPOSPage() {
   const [search, setSearch] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
   const [loading, setLoading] = useState(true);
+  const { addToast } = useToast();
 
   useEffect(() => { fetch('/api/skus').then(r => r.json()).then(d => { setSkus(Array.isArray(d) ? d : []); setLoading(false); }); }, []);
 
@@ -27,6 +30,7 @@ export default function StorefrontPOSPage() {
     } else {
       setCart([...cart, { skuId: sku.id, productName: sku.sku, sku: sku.sku, quantity: 1, unitPrice: sku.sellingPrice, taxRate: sku.taxRate }]);
     }
+    addToast({ title: 'Added to cart', message: `${sku.sku} is now in your cart.`, type: 'success' });
   }
   function removeFromCart(skuId: string) { setCart(cart.filter(c => c.skuId !== skuId)); }
   function updateQty(skuId: string, qty: number) {
@@ -67,7 +71,7 @@ export default function StorefrontPOSPage() {
               {cart.map(item => (
                 <div key={item.skuId} className="flex items-center justify-between border-b pb-2">
                   <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{item.sku}</p><p className="text-xs text-muted-foreground">{formatCurrency(item.unitPrice)}</p></div>
-                  <div className="flex items-center gap-1"><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.skuId, item.quantity - 1)}><Minus className="h-3 w-3"/></Button><span className="text-sm w-6 text-center">{item.quantity}</span><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => updateQty(item.skuId, item.quantity + 1)}><Plus className="h-3 w-3"/></Button><Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3"/></Button></div>
+                  <div className="flex flex-col items-end gap-1"><QuantityControl value={item.quantity} onChange={(quantity) => updateQty(item.skuId, quantity)} /><Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" onClick={() => removeFromCart(item.skuId)}><Trash2 className="h-3 w-3 mr-1"/>Remove</Button></div>
                 </div>
               ))}
               {cart.length === 0 && <p className="text-center text-muted-foreground py-4 text-sm">Cart is empty</p>}

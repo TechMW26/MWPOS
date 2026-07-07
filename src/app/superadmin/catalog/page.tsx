@@ -58,9 +58,9 @@ export default function CatalogPage() {
         <Input placeholder="Search products by name or brand..." value={search} onChange={e => setSearch(e.target.value)} className="pl-10" />
       </div>
       {error ? (
-        <Card className="border-destructive"><CardContent className="py-8 text-center"><p className="text-destructive">{error}</p></CardContent></Card>
+        <Card className="border-destructive"><CardContent className="p-4 text-center"><p className="text-destructive">{error}</p></CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-16 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p><p className="text-sm text-muted-foreground mt-1">{search ? 'Try a different search term.' : 'Click New Product to add your first product.'}</p>{!search && <Link href="/superadmin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
+        <Card><CardContent className="p-4 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p><p className="text-sm text-muted-foreground mt-1">{search ? 'Try a different search term.' : 'Click New Product to add your first product.'}</p>{!search && <Link href="/superadmin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((product: any) => {
