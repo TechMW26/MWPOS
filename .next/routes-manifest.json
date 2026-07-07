@@ -1,1 +1,245 @@
-{"version":3,"caseSensitive":false,"basePath":"","rewrites":{"beforeFiles":[],"afterFiles":[],"fallback":[]},"redirects":[{"source":"/:path+/","destination":"/:path+","permanent":true,"internal":true,"regex":"^(?:\\/((?:[^\\/]+?)(?:\\/(?:[^\\/]+?))*))\\/$"}],"headers":[]}
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/admin/catalog",
+      "regex": "^/admin/catalog(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/catalog(?:/)?$"
+    },
+    {
+      "page": "/admin/customer-stores",
+      "regex": "^/admin/customer\\-stores(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/customer\\-stores(?:/)?$"
+    },
+    {
+      "page": "/admin/dashboard",
+      "regex": "^/admin/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/dashboard(?:/)?$"
+    },
+    {
+      "page": "/admin/inventory",
+      "regex": "^/admin/inventory(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/inventory(?:/)?$"
+    },
+    {
+      "page": "/admin/orders",
+      "regex": "^/admin/orders(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/orders(?:/)?$"
+    },
+    {
+      "page": "/admin/reports",
+      "regex": "^/admin/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/reports(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/manager/customer-stores",
+      "regex": "^/manager/customer\\-stores(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/customer\\-stores(?:/)?$"
+    },
+    {
+      "page": "/manager/dashboard",
+      "regex": "^/manager/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/dashboard(?:/)?$"
+    },
+    {
+      "page": "/manager/inventory",
+      "regex": "^/manager/inventory(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/inventory(?:/)?$"
+    },
+    {
+      "page": "/manager/orders",
+      "regex": "^/manager/orders(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/orders(?:/)?$"
+    },
+    {
+      "page": "/manager/pos",
+      "regex": "^/manager/pos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/pos(?:/)?$"
+    },
+    {
+      "page": "/manager/reports",
+      "regex": "^/manager/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manager/reports(?:/)?$"
+    },
+    {
+      "page": "/storefront/cart",
+      "regex": "^/storefront/cart(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/cart(?:/)?$"
+    },
+    {
+      "page": "/storefront/catalog",
+      "regex": "^/storefront/catalog(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/catalog(?:/)?$"
+    },
+    {
+      "page": "/storefront/dashboard",
+      "regex": "^/storefront/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/dashboard(?:/)?$"
+    },
+    {
+      "page": "/storefront/inventory",
+      "regex": "^/storefront/inventory(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/inventory(?:/)?$"
+    },
+    {
+      "page": "/storefront/orders",
+      "regex": "^/storefront/orders(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/orders(?:/)?$"
+    },
+    {
+      "page": "/storefront/pos",
+      "regex": "^/storefront/pos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/pos(?:/)?$"
+    },
+    {
+      "page": "/storefront/profile",
+      "regex": "^/storefront/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/storefront/profile(?:/)?$"
+    },
+    {
+      "page": "/superadmin/audit-logs",
+      "regex": "^/superadmin/audit\\-logs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/audit\\-logs(?:/)?$"
+    },
+    {
+      "page": "/superadmin/catalog",
+      "regex": "^/superadmin/catalog(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/catalog(?:/)?$"
+    },
+    {
+      "page": "/superadmin/catalog/new",
+      "regex": "^/superadmin/catalog/new(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/catalog/new(?:/)?$"
+    },
+    {
+      "page": "/superadmin/dashboard",
+      "regex": "^/superadmin/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/dashboard(?:/)?$"
+    },
+    {
+      "page": "/superadmin/inventory",
+      "regex": "^/superadmin/inventory(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/inventory(?:/)?$"
+    },
+    {
+      "page": "/superadmin/orders",
+      "regex": "^/superadmin/orders(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/orders(?:/)?$"
+    },
+    {
+      "page": "/superadmin/reports",
+      "regex": "^/superadmin/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/reports(?:/)?$"
+    },
+    {
+      "page": "/superadmin/settings",
+      "regex": "^/superadmin/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/settings(?:/)?$"
+    },
+    {
+      "page": "/superadmin/store-managers",
+      "regex": "^/superadmin/store\\-managers(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/store\\-managers(?:/)?$"
+    },
+    {
+      "page": "/superadmin/stores",
+      "regex": "^/superadmin/stores(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/stores(?:/)?$"
+    },
+    {
+      "page": "/superadmin/users",
+      "regex": "^/superadmin/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/superadmin/users(?:/)?$"
+    },
+    {
+      "page": "/verify",
+      "regex": "^/verify(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/verify(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}
