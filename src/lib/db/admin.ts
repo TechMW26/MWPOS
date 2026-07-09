@@ -1,5 +1,25 @@
 type QueryParams = Record<string, string | number | boolean>;
 
+// ─── Simple in-memory read cache (TTL: 3 seconds) ───────────
+const readCache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL_MS = 3000;
+
+function cacheKey(path: string, params: QueryParams): string {
+  const qs = Object.entries(params).sort().map(([k, v]) => `${k}=${v}`).join("&");
+  return qs ? `${path}?${qs}` : path;
+}
+
+function getCached(key: string): unknown | undefined {
+  const entry = readCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) return entry.data;
+  readCache.delete(key);
+  return undefined;
+}
+
+function setCache(key: string, data: unknown): void {
+  readCache.set(key, { data, ts: Date.now() });
+}
+
 class RtdbSnapshot {
   constructor(private readonly data: unknown) {}
 
@@ -15,6 +35,7 @@ class RtdbSnapshot {
 class RtdbRef {
   private orderChild?: string;
   private equalValue?: unknown;
+  private static idCounter = 0;
 
   constructor(private readonly path: string) {}
 
@@ -49,7 +70,11 @@ class RtdbRef {
     if (this.orderChild) params.orderBy = JSON.stringify(this.orderChild);
     if (this.equalValue !== undefined) params.equalTo = JSON.stringify(this.equalValue);
 
-    const response = await fetch(buildUrl(this.path, params), { cache: "no-store" });
+    const key = cacheKey(this.path, params);
+    const cached = getCached(key);
+    if (cached !== undefined) return new RtdbSnapshot(cached);
+
+    const response = await fetch(buildUrl(this.path, params));
     if (response.status === 400 && this.orderChild) {
       return this.getFilteredWithoutIndex();
     }
@@ -58,16 +83,24 @@ class RtdbRef {
       throw new Error(`RTDB read failed: ${response.status}`);
     }
 
-    return new RtdbSnapshot(await response.json());
+    const data = await response.json();
+    setCache(key, data);
+    return new RtdbSnapshot(data);
   }
 
   private async getFilteredWithoutIndex(): Promise<RtdbSnapshot> {
-    const response = await fetch(buildUrl(this.path), { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`RTDB read failed: ${response.status}`);
-    }
+    const key = cacheKey(this.path, {});
+    const cached = getCached(key);
+    const collection: Record<string, Record<string, unknown>> = cached !== undefined
+      ? cached as Record<string, Record<string, unknown>>
+      : await (async () => {
+          const response = await fetch(buildUrl(this.path));
+          if (!response.ok) throw new Error(`RTDB read failed: ${response.status}`);
+          const data = await response.json();
+          setCache(key, data);
+          return data;
+        })();
 
-    const collection = await response.json();
     if (!collection || typeof collection !== "object" || !this.orderChild) {
       return new RtdbSnapshot(null);
     }
@@ -77,7 +110,7 @@ class RtdbRef {
     }
 
     const filtered = Object.fromEntries(
-      Object.entries(collection as Record<string, Record<string, unknown>>).filter(
+      Object.entries(collection).filter(
         ([, value]) => value?.[this.orderChild!] === this.equalValue
       )
     );
@@ -94,6 +127,7 @@ class RtdbRef {
     if (!response.ok) {
       throw new Error(`RTDB write failed: ${response.status}`);
     }
+    readCache.clear(); // Invalidate on write
   }
 
   async update(value: Record<string, unknown>): Promise<void> {
@@ -112,6 +146,7 @@ class RtdbRef {
       const details = await response.text().catch(() => "");
       throw new Error(`RTDB update failed: ${response.status}${details ? ` ${details}` : ""}`);
     }
+    readCache.clear(); // Invalidate on write
   }
 
   async remove(): Promise<void> {

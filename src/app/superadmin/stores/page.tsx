@@ -6,16 +6,11 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
 import { Plus, Check, X, Trash2, Edit3 } from 'lucide-react';
-import { INDIAN_STATES, getAreasForCity, getDistrictsForState } from '@/lib/indian-districts';
-import type { District } from '@/types/models';
+import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
 
 export default function DistributorsPage() {
   const [distributors, setDistributors] = useState<any[]>([]);
-  const [districts, setDistricts] = useState<District[]>([]);
-  const [cityAreas, setCityAreas] = useState<string[]>([]);
-  const [areasLoading, setAreasLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -23,65 +18,21 @@ export default function DistributorsPage() {
   const [editing, setEditing] = useState<any>(null);
   const [form, setForm] = useState({ name:'', state:'', district:'', address:'', city:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
 
-  const citiesForState = useMemo(() => {
-    const cities = districts
-      .filter(d => d.state === form.state && d.city)
-      .map(d => d.city);
-    return Array.from(new Set([...cities, ...getDistrictsForState(form.state)])).sort();
-  }, [districts, form.state]);
-  const districtsForCity = useMemo(() => {
-    const configured = districts
-      .filter(d => d.state === form.state && d.city === form.city)
-      .map(d => ({ id: d.id, name: d.name, city: d.city, state: d.state }));
-    const areas = Array.from(new Set([...getAreasForCity(form.state, form.city), ...cityAreas]));
-    const areaOptions = areas.map(area => ({
-      id: `${form.state}|${form.city}|${area}`,
-      name: area,
-      city: form.city,
-      state: form.state,
-    }));
-    const fallback = getDistrictsForState(form.state).includes(form.city)
-      ? [{ id: `${form.state}|${form.city}`, name: form.city, city: form.city, state: form.state }]
-      : [];
-    if (configured.length > 0) return configured;
-    if (areaOptions.length > 0) return areaOptions;
-    return fallback;
-  }, [cityAreas, districts, form.city, form.state]);
-  const districtById = useMemo(() => new Map(districts.map(d => [d.id, d])), [districts]);
+  const districtsForState = useMemo(() => getDistrictsForState(form.state), [form.state]);
 
   async function load() {
     try {
-      const [distRes, districtRes] = await Promise.all([
-        fetch('/api/distributors'),
-        fetch('/api/districts'),
-      ]);
-      const distData = await distRes.json();
-      const districtData = await districtRes.json();
-      setDistributors(Array.isArray(distData) ? distData : []);
-      setDistricts(Array.isArray(districtData) ? districtData : []);
+      const res = await fetch('/api/distributors');
+      const data = await res.json();
+      setDistributors(Array.isArray(data) ? data : []);
     } catch(e){} finally { setLoading(false); }
   }
   useEffect(() => { load(); }, []);
 
-  useEffect(() => {
-    if (!form.state || !form.city) {
-      setCityAreas([]);
-      return;
-    }
-    const controller = new AbortController();
-    setAreasLoading(true);
-    fetch(`/api/geo/areas?state=${encodeURIComponent(form.state)}&city=${encodeURIComponent(form.city)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setCityAreas(Array.isArray(data) ? data : []))
-      .catch(() => setCityAreas([]))
-      .finally(() => setAreasLoading(false));
-    return () => controller.abort();
-  }, [form.city, form.state]);
-
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setCreateError('');
-    if (!form.state || !form.city || !form.district) { alert('Please select state, city and district'); return; }
+    if (!form.state || !form.district) { alert('Please select state and district'); return; }
     setCreating(true);
     try {
       const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, districtId: form.district, type: 'DISTRIBUTOR' }) });
@@ -138,7 +89,13 @@ export default function DistributorsPage() {
         </Button>
       </div>
 
-      <Modal open={showForm} title="New Distributor" onClose={() => { setCreateError(''); setShowForm(false); }}>
+      {showForm && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>New Distributor</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => { setCreateError(''); setShowForm(false); }}><X className="h-4 w-4" /></Button>
+          </CardHeader>
+          <CardContent>
             <form onSubmit={handleCreate} className="space-y-5">
               {createError && <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{createError}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -147,26 +104,19 @@ export default function DistributorsPage() {
                 <Input placeholder="Email (optional)" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
                 <Input placeholder="GSTIN (optional)" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} />
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-medium block mb-1">State</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.state} onChange={e => setForm({...form, state:e.target.value, city:'', district:''})} required>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.state} onChange={e => setForm({...form, state:e.target.value, district:''})} required>
                     <option value="">Select State *</option>
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">City</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.city} onChange={e => setForm({...form, city:e.target.value, district:''})} required disabled={!form.state}>
-                    <option value="">{form.state ? 'Select City *' : 'Select state first'}</option>
-                    {citiesForState.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
                   <label className="text-sm font-medium block mb-1">District</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.district} onChange={e => setForm({...form, district:e.target.value})} required disabled={!form.city}>
-                    <option value="">{areasLoading ? 'Loading areas...' : 'Select District *'}</option>
-                    {districtsForCity.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.district} onChange={e => setForm({...form, district:e.target.value})} required disabled={!form.state}>
+                    <option value="">{form.state ? 'Select District *' : 'Select state first'}</option>
+                    {districtsForState.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
               </div>
@@ -184,7 +134,9 @@ export default function DistributorsPage() {
               </div>
               <div><Button className="w-full sm:w-auto" type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Distributor'}</Button></div>
             </form>
-      </Modal>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle>All Distributors ({distributors.length})</CardTitle></CardHeader>
@@ -194,10 +146,8 @@ export default function DistributorsPage() {
             columns={[
               { key: 'name', header: 'Name' },
               { key: 'districtId', header: 'District', render: (d) => {
-                const district = districtById.get(d.districtId);
-                if (district) return <span className="text-sm">{district.name} <span className="text-muted-foreground text-xs">({district.city}, {district.state})</span></span>;
                 const parts = (d.districtId || '').split('|');
-                return <span className="text-sm">{parts[1] || d.districtId} <span className="text-muted-foreground text-xs">({parts[0]})</span></span>;
+                return <span className="text-sm">{parts[1] || parts[0] || d.districtId}</span>;
               }},
               { key: 'city', header: 'City' },
               { key: 'phone', header: 'Phone' },

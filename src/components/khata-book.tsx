@@ -34,15 +34,14 @@ export function KhataBook({ role, managerDistributors }: KhataBookProps) {
         const filtered = managerDistributors ? dList.filter((d: any) => managerDistributors.includes(d.id)) : dList;
         setDistributors(filtered);
 
-        const allOrders: any[] = [];
-        for (const d of filtered) {
-          try {
-            const res = await fetch('/api/orders?distributorId=' + d.id);
-            const data = await res.json();
-            if (Array.isArray(data)) allOrders.push(...data);
-          } catch {}
-        }
-        setOrders(allOrders);
+        // Fetch all orders in one call — orders API returns all orders for SUPERADMIN/ADMIN
+        const orderRes = await fetch('/api/orders');
+        const orderData = await orderRes.json();
+        const allOrders = Array.isArray(orderData) ? orderData : [];
+
+        // Filter to only orders belonging to visible distributors
+        const visibleIds = new Set(filtered.map((d: any) => d.id));
+        setOrders(allOrders.filter((o: any) => visibleIds.has(o.distributorId)));
       } catch {} finally { setLoading(false); }
     }
     load();

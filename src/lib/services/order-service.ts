@@ -286,15 +286,7 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     };
   }
 
-  // Write all data using individual writes (avoids multi-path PATCH issues)
-  for (const [key, value] of Object.entries(updates)) {
-    try {
-      await adminDb.ref(key).update(value as Record<string, unknown>);
-    } catch (e) {
-      console.error(`[Order] Failed writing ${key}:`, e instanceof Error ? e.message : String(e));
-      throw e;
-    }
-  }
+  await adminDb.ref().update(updates);
 
   // Send OTP to distributor via email for ASM-created orders
   if (otpRequest && otpCode && distributor.email) {
