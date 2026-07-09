@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, CheckCircle2, Clock, KeyRound, Loader2, Package, ReceiptText } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, Edit3, KeyRound, Loader2, Package, ReceiptText, Trash2 } from 'lucide-react';
 
 interface OrderSummaryProps {
   orderId: string;
   backHref: string;
+  role?: string;
 }
 
 const statusVariant: Record<string, 'default' | 'success' | 'warning' | 'destructive' | 'outline'> = {
@@ -96,7 +97,7 @@ const statusCopy: Record<string, { label: string; description: string; nextStep:
   },
 };
 
-export function OrderSummary({ orderId, backHref }: OrderSummaryProps) {
+export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,6 +105,16 @@ export function OrderSummary({ orderId, backHref }: OrderSummaryProps) {
   const [verifying, setVerifying] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState(false);
+
+  // Edit quantity state
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editQty, setEditQty] = useState(0);
+  const [editReason, setEditReason] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  // Delete state
+  const [deleting, setDeleting] = useState(false);
 
   const loadOrder = () => {
     fetch(`/api/orders?orderId=${encodeURIComponent(orderId)}`)
@@ -141,6 +152,50 @@ export function OrderSummary({ orderId, backHref }: OrderSummaryProps) {
       setVerifying(false);
     }
   }
+
+  async function handleEditQuantity(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editReason.trim()) { setEditError('Reason is required'); return; }
+    if (editQty < 1) { setEditError('Quantity must be at least 1'); return; }
+    setSavingEdit(true); setEditError('');
+    try {
+      const res = await fetch('/api/orders/edit-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, skuId: editingItem.skuId, newQuantity: editQty, reason: editReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to update quantity');
+      setEditingItem(null);
+      loadOrder();
+    } catch (e: any) {
+      setEditError(e.message || 'Failed');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteOrder() {
+    if (!confirm(`Delete order #${orderId.slice(0, 8)}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/orders/transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, toStatus: 'CANCELLED', idempotencyKey: crypto.randomUUID() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to delete');
+      window.location.href = backHref;
+    } catch (e: any) {
+      alert(e.message || 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const canEditQuantity = role === 'C_AND_F' && !['DELIVERED', 'CANCELLED', 'REJECTED', 'CF_REJECTED'].includes(order?.status);
+  const canDelete = role === 'C_AND_F' || (role === 'ASM' && order?.status === 'PENDING_OTP');
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading order summary...</div>;
 
@@ -198,7 +253,14 @@ export function OrderSummary({ orderId, backHref }: OrderSummaryProps) {
                     <p className="font-medium">{item.productName || item.sku}</p>
                     <p className="text-sm text-muted-foreground">{item.sku} · Qty {item.quantity} · {formatCurrency(item.unitPricePaise)} each</p>
                   </div>
-                  <p className="font-semibold">{formatCurrency((item.totalPaise || 0) + (item.taxPaise || 0))}</p>
+                  <div className="flex items-center gap-3">
+                    <p className="font-semibold">{formatCurrency((item.totalPaise || 0) + (item.taxPaise || 0))}</p>
+                    {canEditQuantity && (
+                      <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => { setEditingItem(item); setEditQty(item.quantity); setEditReason(''); setEditError(''); }}>
+                        <Edit3 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -284,6 +346,54 @@ export function OrderSummary({ orderId, backHref }: OrderSummaryProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Quantity Modal */}
+      {editingItem && (
+        <Card className="mx-auto max-w-4xl border-yellow-300 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="text-lg">Edit Quantity — {editingItem.productName || editingItem.sku}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEditQuantity} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium block mb-1">New Quantity</label>
+                <Input type="number" min={1} value={editQty} onChange={e => setEditQty(Number(e.target.value))} required />
+                <p className="text-xs text-muted-foreground mt-1">Current: {editingItem.quantity} × {formatCurrency(editingItem.unitPricePaise)} = {formatCurrency(editingItem.totalPaise || editingItem.unitPricePaise * editingItem.quantity)}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">Reason for change *</label>
+                <Input placeholder="e.g. Stock shortage, customer request, quality issue..." value={editReason} onChange={e => setEditReason(e.target.value)} required />
+              </div>
+              {editError && <p className="text-sm text-red-600">{editError}</p>}
+              <div className="flex gap-2">
+                <Button type="submit" disabled={savingEdit}>
+                  {savingEdit ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  Save Changes
+                </Button>
+                <Button variant="outline" type="button" onClick={() => setEditingItem(null)}>Cancel</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Admin Actions */}
+      {(canEditQuantity || canDelete) && (
+        <Card className="mx-auto max-w-4xl">
+          <CardHeader><CardTitle className="text-lg">Admin Actions</CardTitle></CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {canDelete && (
+              <Button variant="destructive" onClick={handleDeleteOrder} disabled={deleting}>
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                Delete Order
+              </Button>
+            )}
+            {!canEditQuantity && !canDelete && (
+              <p className="text-sm text-muted-foreground">No admin actions available for this order.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

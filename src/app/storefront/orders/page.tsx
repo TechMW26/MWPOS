@@ -4,9 +4,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/utils';
+import Link from 'next/link';
 
 const statusColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
-  DRAFT:'outline', PENDING_OWNER_APPROVAL:'warning', SUBMITTED:'default', APPROVED:'warning', ALLOCATED:'warning', PICKING:'warning', PACKED:'warning', SHIPPED:'default', DELIVERED:'success', CANCELLED:'destructive', REJECTED:'destructive'
+  DRAFT:'outline', PENDING_OTP:'warning', OTP_VERIFIED:'default', PENDING_CF_APPROVAL:'warning', CF_APPROVED:'default', CF_REJECTED:'destructive', ALLOCATED:'warning', PICKING:'warning', PACKED:'warning', SHIPPED:'default', DELIVERED:'success', CANCELLED:'destructive', REJECTED:'destructive'
 };
 
 export default function StoreOrdersPage() {
@@ -22,7 +23,7 @@ export default function StoreOrdersPage() {
     <div className="space-y-6">
       <Card><CardHeader><CardTitle>Orders ({orders.length})</CardTitle></CardHeader><CardContent>
         <DataTable data={orders} columns={[
-          { key: 'id', header: 'Order ID', render: (o:any) => <span className="font-mono text-xs">{o.id?.slice(0,8)}...</span> },
+          { key: 'id', header: 'Order ID', render: (o:any) => <Link href={`/storefront/orders/${o.id}`} className="font-mono text-xs text-primary hover:underline">{o.id?.slice(0,8)}...</Link> },
           { key: 'status', header: 'Status', render: (o:any) => <Badge variant={statusColors[o.status] || 'outline'}>{o.status}</Badge> },
           { key: 'totalPaise', header: 'Total', render: (o:any) => formatCurrency(o.totalPaise) },
           { key: 'paymentMode', header: 'Payment', render: (o:any) => <Badge variant={o.paymentMode === 'UPFRONT' ? 'default' : 'warning'}>{o.paymentMode === 'UPFRONT' ? 'Upfront' : 'Khata'}</Badge> },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
@@ -44,7 +45,8 @@ export default function CfOrdersPage() {
       ) : (
         <div className="space-y-3">
           {orders.map((order: any) => (
-            <Card key={order.id} className="p-4">
+            <Link key={order.id} href={`/cf/orders/${order.id}`} className="block">
+            <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="font-medium">Order #{order.id?.slice(0, 8)}</p>
@@ -59,15 +61,15 @@ export default function CfOrdersPage() {
                   {order.status?.replace(/_/g, ' ')}
                 </Badge>
                 {order.status === 'PENDING_CF_APPROVAL' && (
-                  <div className="flex gap-2">
+                  <div className="flex gap-2" onClick={e => e.preventDefault()}>
                     <button
-                      onClick={() => handleApproval(order.id, 'APPROVE')}
+                      onClick={(e) => { e.preventDefault(); handleApproval(order.id, 'APPROVE'); }}
                       className="rounded-md bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-700"
                     >
                       Approve
                     </button>
                     <button
-                      onClick={() => handleApproval(order.id, 'REJECT')}
+                      onClick={(e) => { e.preventDefault(); handleApproval(order.id, 'REJECT'); }}
                       className="rounded-md bg-red-600 px-3 py-1 text-sm text-white hover:bg-red-700"
                     >
                       Reject
@@ -76,6 +78,7 @@ export default function CfOrdersPage() {
                 )}
               </div>
             </Card>
+            </Link>
           ))}
         </div>
       )}

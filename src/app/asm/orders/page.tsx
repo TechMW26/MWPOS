@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
@@ -44,7 +45,8 @@ export default function AsmOrdersPage() {
       ) : (
         <div className="space-y-3">
           {orders.map((order: any) => (
-            <Card key={order.id} className="p-4">
+            <Link key={order.id} href={`/asm/orders/${order.id}`} className="block">
+            <Card className="p-4 hover:shadow-md transition-shadow cursor-pointer">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Order #{order.id?.slice(0, 8)}</p>
@@ -62,6 +64,7 @@ export default function AsmOrdersPage() {
                 </p>
               )}
             </Card>
+            </Link>
           ))}
         </div>
       )}
