@@ -30,9 +30,12 @@ export const metadata: Metadata = {
     telephone: false
   },
   icons: {
-    icon: '/MW_POS.png',
-    shortcut: '/MW_POS.png',
-    apple: '/MW_POS.png'
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+    ],
+    shortcut: '/icons/icon-192.png',
+    apple: '/icons/apple-touch-icon.png'
   },
   manifest: '/manifest.json'
 }

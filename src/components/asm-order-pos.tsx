@@ -43,18 +43,7 @@ export function AsmOrderPos({ mode = "asm" }: { mode?: "asm" | "cf" }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    const cacheKey = `mwpos:marketplace:${mode}:/api/marketplace?storeType=DISTRIBUTOR`;
-    try {
-      const cached = JSON.parse(window.sessionStorage.getItem(cacheKey) || "null") as { at?: number; payload?: MarketplaceData } | null;
-      if (cached?.at && cached.payload && Date.now() - cached.at < 60_000) {
-        setData(cached.payload);
-        setLoading(false);
-      }
-    } catch {
-      window.sessionStorage.removeItem(cacheKey);
-    }
-
-    fetch("/api/marketplace?storeType=DISTRIBUTOR", { signal: controller.signal })
+    fetch("/api/marketplace?storeType=DISTRIBUTOR", { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.message || "Unable to load ASM ordering");
@@ -64,7 +53,6 @@ export function AsmOrderPos({ mode = "asm" }: { mode?: "asm" | "cf" }) {
           stores: Array.isArray(payload.stores) ? payload.stores : [],
         };
         setData(clean);
-        window.sessionStorage.setItem(cacheKey, JSON.stringify({ at: Date.now(), payload: clean }));
         setError("");
       })
       .catch((loadError) => {

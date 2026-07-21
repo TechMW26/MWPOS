@@ -9,7 +9,7 @@
 //   - Update management
 // ============================================================
 
-const APP_VERSION = 'mwpos-v2'
+const APP_VERSION = 'mwpos-v3'
 const CACHE_NAMES = {
   static: `${APP_VERSION}-static`,
   pages: `${APP_VERSION}-pages`,
@@ -23,7 +23,8 @@ const PRECACHE_URLS = [
   '/manifest.json',
   '/MW_POS.png',
   '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/icons/icon-512.png',
+  '/icons/apple-touch-icon.png'
 ]
 
 // ── Install — pre-cache app shell ─────────────────────────

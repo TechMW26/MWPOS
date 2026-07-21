@@ -82,7 +82,7 @@ export default function POSPage() {
     });
     const data = await res.json();
     if (!res.ok) {
-      alert(data.message || 'Failed to place order');
+      addToast({ title: 'Order not placed', message: data.message || 'Failed to place order', type: 'error' });
       return;
     }
     addToast({

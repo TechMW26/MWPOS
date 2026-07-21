@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
+import { useToast } from '@/lib/hooks/use-toast';
 import { DollarSign, TrendingUp, TrendingDown, FileText, Printer, Send } from 'lucide-react';
 
 interface KhataBookProps {
@@ -16,6 +17,7 @@ interface KhataBookProps {
 }
 
 export function KhataBook({ role, managerDistributors }: KhataBookProps) {
+  const { addToast } = useToast();
   const [orders, setOrders] = useState<any[]>([]);
   const [distributors, setDistributors] = useState<any[]>([]);
   const [selectedDistributor, setSelectedDistributor] = useState('ALL');
@@ -121,7 +123,10 @@ export function KhataBook({ role, managerDistributors }: KhataBookProps) {
   function sendWhatsApp(order: any) {
     const dist = distributors.find(d => d.id === order.distributorId);
     const phone = dist?.phone || '';
-    if (!phone) { alert('No phone number for this distributor'); return; }
+    if (!phone) {
+      addToast({ title: 'Phone number missing', message: 'This distributor does not have a phone number.', type: 'error' });
+      return;
+    }
     const text = `MW-POS Invoice #${order.id?.slice(0,8)}\nDistributor: ${dist?.name}\nAmount: ${formatCurrency(order.totalPaise)}\nDate: ${new Date(order.createdAt).toLocaleDateString()}\nPayment: ${order.paymentMode === 'UPFRONT' ? 'Upfront' : 'Khata'}\nStatus: ${order.status}`;
     window.open(whatsappUrl(phone, text), '_blank');
   }

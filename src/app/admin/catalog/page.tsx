@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/modal';
 import { Plus, Search, Package, Loader2, ExternalLink, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
@@ -15,6 +16,7 @@ export default function AdminCatalogPage() {
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
   const [assignMsg, setAssignMsg] = useState('');
+  const [deleteProductId, setDeleteProductId] = useState<string | null>(null);
   const productsLive = useRealtimeList({ path: 'products', fallbackUrl: '/api/products' });
   const skusLive = useRealtimeList({ path: 'productSkus', fallbackUrl: '/api/skus' });
   const storesLive = useRealtimeList({ path: 'stores', fallbackUrl: '/api/stores?type=CUSTOMER', orderChild: 'type', equalValue: 'CUSTOMER' });
@@ -34,9 +36,9 @@ export default function AdminCatalogPage() {
     return skus.filter((s: any) => s.productId === productId);
   }
 
-  async function handleDelete(productId: string) {
-    if (!confirm('Delete this product and all its SKUs?')) return;
-    await fetch('/api/products?id=' + productId, { method: 'DELETE' });
+  async function handleDelete() {
+    if (!deleteProductId) return;
+    await fetch('/api/products?id=' + deleteProductId, { method: 'DELETE' });
   }
 
   async function handleAssign(productId: string) {
@@ -107,7 +109,7 @@ export default function AdminCatalogPage() {
                       <div className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{productSkus.length}</span> SKU{productSkus.length !== 1 ? 's' : ''}</div>
                       {selectedStore && <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); handleAssign(product.id); }}>Assign to Store</Button>}
                       <Link href={`/superadmin/catalog/new?edit=${product.id}`} onClick={e => e.stopPropagation()}><Button variant="outline" size="sm"><ExternalLink className="h-3 w-3 mr-1" />Edit</Button></Link>
-                      <Button variant="outline" size="sm" className="text-destructive" onClick={e => { e.stopPropagation(); handleDelete(product.id); }}><Trash2 className="h-3 w-3" /></Button>
+                      <Button variant="outline" size="sm" className="text-destructive" onClick={e => { e.stopPropagation(); setDeleteProductId(product.id); }}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -124,6 +126,7 @@ export default function AdminCatalogPage() {
           })}
         </div>
       )}
+      <ConfirmDialog open={Boolean(deleteProductId)} title="Delete product?" message="This permanently deletes the product and all of its SKUs." confirmLabel="Delete product" danger onClose={() => setDeleteProductId(null)} onConfirm={handleDelete} />
     </div>
   );
 }

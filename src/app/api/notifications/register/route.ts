@@ -14,7 +14,7 @@ export async function POST (request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { token } = (await request.json()) as { token?: string }
+    const { token, platform } = (await request.json()) as { token?: string; platform?: string }
     if (!token || typeof token !== 'string') {
       return NextResponse.json({ error: 'Missing token' }, { status: 400 })
     }
@@ -28,7 +28,7 @@ export async function POST (request: Request) {
     await adminDb.ref(`users/${userId}/fcmTokens/${tokenKey}`).set({
       token,
       createdAt: new Date().toISOString(),
-      platform: 'web'
+      platform: platform === 'android' ? 'android' : 'web'
     })
 
     console.log(`[FCM-API] Token registered for user ${userId}`)

@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "667894954535",
+    "firebase_url": "https://mxpos-bb29e-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "mxpos-bb29e",
+    "storage_bucket": "mxpos-bb29e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:667894954535:android:33087bc22ea9838168ec02",
+        "android_client_info": {
+          "package_name": "com.mwfuturetech.mwpos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDbHABlzIRlgaZbffTge_wP_kBALuPd-_Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

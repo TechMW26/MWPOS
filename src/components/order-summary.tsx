@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/modal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, CheckCircle2, Clock, Edit3, History, KeyRound, Loader2, Package, ReceiptText, ShieldCheck, UserRoundCheck, XCircle } from 'lucide-react';
@@ -132,6 +133,7 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
 
   // Delete state
   const [deleting, setDeleting] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [transitioning, setTransitioning] = useState('');
   const [transitionNotes, setTransitionNotes] = useState('');
   const [transitionError, setTransitionError] = useState('');
@@ -172,7 +174,6 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   }
 
   async function handleDeleteOrder() {
-    if (!confirm(`Cancel order #${orderId.slice(0, 8)}? This will be recorded in its history.`)) return;
     setDeleting(true);
     try {
       const res = await fetch('/api/orders/transition', {
@@ -184,7 +185,7 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
       if (!res.ok) throw new Error(data.message || 'Failed to cancel order');
       window.location.href = backHref;
     } catch (e: any) {
-      alert(e.message || 'Failed to cancel order');
+      setTransitionError(e.message || 'Failed to cancel order');
     } finally {
       setDeleting(false);
     }
@@ -431,7 +432,7 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
               </Button>
             ))}
             {canCancel && (
-              <Button variant="destructive" onClick={handleDeleteOrder} disabled={deleting}>
+              <Button variant="destructive" onClick={() => setCancelDialogOpen(true)} disabled={deleting}>
                 {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <XCircle className="h-4 w-4 mr-1" />}
                 Cancel order
               </Button>
@@ -441,6 +442,15 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
           </CardContent>
         </Card>
       )}
+      <ConfirmDialog
+        open={cancelDialogOpen}
+        title="Cancel order?"
+        message={`Order #${orderId.slice(0, 8)} will be cancelled and the action will be recorded in its history.`}
+        confirmLabel="Cancel order"
+        danger
+        onClose={() => setCancelDialogOpen(false)}
+        onConfirm={handleDeleteOrder}
+      />
     </div>
   );
 }

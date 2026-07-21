@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { Icon } from "@phosphor-icons/react";
 import { LogOut, Menu, Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useRouter } from "next/navigation";
@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 export interface AppNavItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  icon: Icon;
 }
 
 interface AppShellProps {
@@ -96,7 +96,7 @@ export function AppShell({ children, nav, bottomNav, roleLabel }: AppShellProps)
   }, [search, nav]);
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
+    <div data-mw-app-shell className="min-h-dvh bg-background text-foreground">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 border-r bg-card/95 px-4 py-5 shadow-sm backdrop-blur lg:flex lg:flex-col">
         <Brand roleLabel={roleLabel} />
         <NavList nav={nav} pathname={pathname} className="mt-6 flex-1" />

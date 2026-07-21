@@ -42,7 +42,7 @@ async function syncTokenToBackend (token: string): Promise<void> {
     await fetch('/api/notifications/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token })
+      body: JSON.stringify({ token, platform: 'android' })
     })
     console.log('[NativeFCM] Token synced to backend')
   } catch (err) {
@@ -67,6 +67,14 @@ export function initNativeBridge (): void {
     syncTokenToBackend(token)
   }) as EventListener)
 
+  // Also listen for fcmToken events from Android WebView
+  document.addEventListener('fcmToken', ((event: CustomEvent<string>) => {
+    const token = event.detail
+    console.log('[NativeFCM] Token from Android:', token.substring(0, 20) + '...')
+    listeners.token.forEach(handler => handler(token))
+    syncTokenToBackend(token)
+  }) as EventListener)
+
   document.addEventListener('nativePush', ((event: CustomEvent<string>) => {
     try {
       const data = JSON.parse(event.detail) as Record<string, string>
@@ -74,6 +82,19 @@ export function initNativeBridge (): void {
       listeners.push.forEach(handler => handler(data))
     } catch {
       console.error('[NativeFCM] Failed to parse native push data')
+    }
+  }) as EventListener)
+
+  // Also listen for pushData events from Android WebView
+  document.addEventListener('pushData', ((event: CustomEvent<string>) => {
+    try {
+      const data = typeof event.detail === 'string'
+        ? JSON.parse(event.detail) as Record<string, string>
+        : event.detail as Record<string, string>
+      console.log('[NativeFCM] Push data from Android:', data)
+      listeners.push.forEach(handler => handler(data))
+    } catch {
+      console.error('[NativeFCM] Failed to parse Android push data')
     }
   }) as EventListener)
 

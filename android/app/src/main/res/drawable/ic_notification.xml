@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification icon: MUST be white-on-transparent per Android guidelines.
+    FCM uses this for the small icon in the status bar.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="@android:color/white">
+    <!-- Simple MW-POS "M" mark for notification bar -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M4,20V4l8,12l8,-12v16h-3V9l-5,8l-5,-8v11H4z" />
+</vector>

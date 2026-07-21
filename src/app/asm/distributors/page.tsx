@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Loader2, MapPin, Phone, Plus, Search, Store, X } from "lucide-react";
+import { ChevronRight, Loader2, MapPin, Phone, Plus, Search, Store } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Modal } from "@/components/ui/modal";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Select } from "@/components/ui/select";
 import { INDIAN_STATES, getDistrictsForState } from "@/lib/indian-districts";
@@ -60,20 +61,6 @@ export default function AsmDistributorsPage() {
     load().catch(() => setLoading(false));
     if (new URLSearchParams(window.location.search).get("add") === "1") setOpen(true);
   }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !saving) setOpen(false);
-    };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open, saving]);
 
   useEffect(() => {
     if (!form.state || !form.city) {
@@ -218,33 +205,9 @@ export default function AsmDistributorsPage() {
         </div>
       )}
 
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex animate-overlay items-end bg-slate-950/45 backdrop-blur-sm"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeForm();
-          }}
-        >
-          <form
-            onSubmit={submit}
-            className="mx-auto max-h-[94dvh] w-full max-w-[520px] animate-sheet-up overflow-y-auto overscroll-contain rounded-t-[2rem] bg-white px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 shadow-2xl"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-distributor-title"
-          >
-            <div className="sticky top-0 z-10 -mx-5 mb-5 bg-white/95 px-5 pb-3 backdrop-blur-xl">
-              <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200" />
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 id="add-distributor-title" className="text-xl font-bold">Add distributor</h3>
-                  <p className="text-sm text-muted-foreground">Admin approval is required before ordering.</p>
-                </div>
-                <button type="button" onClick={closeForm} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-100 transition active:scale-95" aria-label="Close">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
+      <Modal open={open} title="Add distributor" onClose={closeForm} className="max-w-[520px]">
+          <form onSubmit={submit} className="grid gap-4">
+            <p className="text-sm text-muted-foreground">Admin approval is required before ordering.</p>
             <div className="grid gap-4">
               <Field label="Distributor name" required>
                 <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} minLength={2} required placeholder="Business name" autoFocus />
@@ -310,8 +273,7 @@ export default function AsmDistributorsPage() {
               {!assignedDistrictId && <p className="text-center text-xs text-red-600">Your ASM account needs an assigned district.</p>}
             </div>
           </form>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Bell, ChevronRight, LogOut, Menu, X } from "lucide-react";
+import { BellSimpleIcon, CaretRightIcon, ListIcon, SignOutIcon, XIcon } from "@phosphor-icons/react";
 import type { AppNavItem } from "@/components/app-shell";
 import { cn } from "@/lib/cn";
 
@@ -49,7 +49,7 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
   }
 
   return (
-    <div className="min-h-dvh bg-slate-100 text-foreground">
+    <div data-mw-app-shell className="min-h-dvh bg-slate-100 text-foreground">
       <div className="relative mx-auto min-h-dvh max-w-[520px] bg-background shadow-[0_0_48px_rgba(15,23,42,0.08)]">
         <header className="sticky top-0 z-30 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <div className="flex h-14 items-center gap-3 rounded-full border border-white/70 bg-white/90 px-2.5 shadow-[0_10px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl">
@@ -61,11 +61,11 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
               <h1 className="truncate text-[15px] font-bold leading-tight">{activeItem?.label ?? "Home"}</h1>
             </div>
             <Link href={notificationsHref} className="relative flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 transition active:scale-95" aria-label={`${unread} unread notifications`}>
-              <Bell className="h-5 w-5" />
+              <BellSimpleIcon className="h-5 w-5" weight="bold" />
               {unread > 0 && <span className="absolute right-0 top-0 min-w-4 rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-4 text-white">{unread > 9 ? "9+" : unread}</span>}
             </Link>
             <button type="button" onClick={() => setMenuOpen(true)} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-white transition active:scale-95" aria-label="Open menu">
-              <Menu className="h-5 w-5" />
+              <ListIcon className="h-5 w-5" weight="bold" />
             </button>
           </div>
         </header>
@@ -79,7 +79,7 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
             {bottomNav.slice(0, 5).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return <Link key={item.href} href={item.href} className={cn("flex min-w-0 flex-col items-center gap-0.5 rounded-[1.3rem] px-1 py-2 text-[10px] font-semibold transition active:scale-95", active ? "bg-white text-slate-950 shadow-sm" : "text-slate-400 hover:text-white")} aria-current={active ? "page" : undefined}>
-                <item.icon className="h-5 w-5" />
+                <item.icon className="h-5 w-5" weight={active ? "fill" : "regular"} />
                 <span className="max-w-full truncate">{item.label}</span>
               </Link>;
             })}
@@ -90,17 +90,17 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
           <aside className="absolute inset-y-0 right-0 flex w-[min(86vw,360px)] animate-drawer-right flex-col rounded-l-[2rem] bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between px-1 py-2">
               <div><p className="text-xs font-bold uppercase tracking-wider text-primary">MW-POS</p><p className="text-lg font-bold">{roleLabel}</p></div>
-              <button type="button" onClick={() => setMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100" aria-label="Close menu"><X className="h-5 w-5" /></button>
+              <button type="button" onClick={() => setMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100" aria-label="Close menu"><XIcon className="h-5 w-5" weight="bold" /></button>
             </div>
             <div className="mt-5 flex-1 space-y-1 overflow-auto">
               {nav.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} className={cn("flex min-h-12 items-center gap-3 rounded-2xl px-3 text-sm font-semibold", active ? "bg-primary text-primary-foreground" : "hover:bg-slate-100")}>
-                  <item.icon className="h-5 w-5" /><span className="flex-1">{item.label}</span><ChevronRight className="h-4 w-4 opacity-50" />
+                  <item.icon className="h-5 w-5" weight={active ? "fill" : "regular"} /><span className="flex-1">{item.label}</span><CaretRightIcon className="h-4 w-4 opacity-50" weight="bold" />
                 </Link>;
               })}
             </div>
-            <button type="button" onClick={signOut} className="mt-4 flex min-h-12 items-center gap-3 rounded-2xl border px-3 text-sm font-semibold text-red-600"><LogOut className="h-5 w-5" />Sign out</button>
+            <button type="button" onClick={signOut} className="mt-4 flex min-h-12 items-center gap-3 rounded-2xl border px-3 text-sm font-semibold text-red-600"><SignOutIcon className="h-5 w-5" weight="bold" />Sign out</button>
           </aside>
         </div>}
       </div>

@@ -6,7 +6,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
+import { ConfirmDialog, Modal } from '@/components/ui/modal';
 import { UserPlus, Loader2, X, Check, Trash2, Edit3 } from 'lucide-react';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
 import { PhoneInput } from '@/components/ui/phone-input';
@@ -21,6 +21,7 @@ export default function UsersPage() {
   const [adding, setAdding] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [deleteUserId, setDeleteUserId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ phone: '', phoneCode: '+91', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
 
   const { data: users, loading, error, live } = useRealtimeList({ path: 'users', fallbackUrl: '/api/users' });
@@ -101,9 +102,9 @@ export default function UsersPage() {
     setEditingUser(null);
   }
 
-  async function handleDelete(uid: string) {
-    if (!confirm('Delete this user? This cannot be undone.')) return;
-    await fetch('/api/users?uid=' + uid, { method: 'DELETE' });
+  async function handleDelete() {
+    if (!deleteUserId) return;
+    await fetch('/api/users?uid=' + deleteUserId, { method: 'DELETE' });
     setActionMsg('User deleted');
   }
 
@@ -249,12 +250,13 @@ export default function UsersPage() {
             { key: 'actions', header: '', render: (u) => (
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => openEdit(u)}><Edit3 className="h-3 w-3" /></Button>
-                <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" onClick={() => handleDelete(u.uid)}><Trash2 className="h-3 w-3" /></Button>
+                <Button size="sm" variant="ghost" className="h-7 px-1.5 text-destructive" onClick={() => setDeleteUserId(u.uid)}><Trash2 className="h-3 w-3" /></Button>
               </div>
             )},
           ]} emptyMessage="No users found. Click 'Add User' to create one." />
         </CardContent></Card>
       )}
+      <ConfirmDialog open={Boolean(deleteUserId)} title="Delete user?" message="This permanently deletes the user account and cannot be undone." confirmLabel="Delete user" danger onClose={() => setDeleteUserId(null)} onConfirm={handleDelete} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog } from '@/components/ui/modal';
 import { Plus, Check, X, Trash2, Edit3 } from 'lucide-react';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
@@ -17,6 +18,7 @@ export default function DistributorsPage() {
   const [createError, setCreateError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [deleteDistributorId, setDeleteDistributorId] = useState<string | null>(null);
   const [form, setForm] = useState({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', phoneCode:'+91', gstin:'', ownerName:'', ownerPhone:'', ownerPhoneCode:'+91' });
   const [wardOptions, setWardOptions] = useState<string[]>([]);
   const [wardsLoading, setWardsLoading] = useState(false);
@@ -74,9 +76,9 @@ export default function DistributorsPage() {
     load();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('Delete this distributor?')) return;
-    await fetch('/api/stores?storeId=' + id, { method:'DELETE' });
+  async function handleDelete() {
+    if (!deleteDistributorId) return;
+    await fetch('/api/stores?storeId=' + deleteDistributorId, { method:'DELETE' });
     load();
   }
 
@@ -205,7 +207,7 @@ export default function DistributorsPage() {
                     </>
                   )}
                   <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => setEditing(d)}><Edit3 className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" className="text-destructive h-8 px-2" onClick={() => handleDelete(d.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" className="text-destructive h-8 px-2" onClick={() => setDeleteDistributorId(d.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               )},
             ]}
@@ -258,6 +260,7 @@ export default function DistributorsPage() {
           </CardContent>
         </Card>
       )}
+      <ConfirmDialog open={Boolean(deleteDistributorId)} title="Delete distributor?" message="This permanently removes the distributor and its direct assignments." confirmLabel="Delete distributor" danger onClose={() => setDeleteDistributorId(null)} onConfirm={handleDelete} />
     </div>
   );
 }

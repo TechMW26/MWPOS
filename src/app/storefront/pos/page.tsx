@@ -44,7 +44,7 @@ export default function StorefrontPOSPage() {
 
   async function completeSale() {
     if (cart.length === 0) return;
-    alert('Sale completed! Total: ' + formatCurrency(total) + ' via ' + paymentMethod);
+    addToast({ title: 'Sale completed', message: `${formatCurrency(total)} paid via ${paymentMethod}.`, type: 'success' });
     setCart([]);
   }
 
