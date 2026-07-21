@@ -73,7 +73,7 @@ function attemptKey(request: Request, phone: string): string {
 }
 
 async function consumeMasterAttempt(request: Request, phone: string): Promise<boolean> {
-  if (process.env.ENABLE_MASTER_OTP !== "true") return true;
+  if (process.env.ENABLE_MASTER_OTP?.trim().toLowerCase() !== "true") return true;
   const ref = adminDb.ref(`authSecurity/masterOtpAttempts/${attemptKey(request, phone)}`);
   const now = Date.now();
   const result = await ref.transaction((current: { count?: number; resetAt?: number } | null) => {

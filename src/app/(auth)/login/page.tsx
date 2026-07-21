@@ -117,17 +117,18 @@ export default function LoginPage() {
     }
 
     setNormalizedPhone(phoneNumber);
-    setStep("code");
     setCode("");
     setLoading(true);
     try {
       const auth = getFirebaseAuth();
       auth.useDeviceLanguage();
       recaptchaRef.current?.clear();
-      recaptchaRef.current = new RecaptchaVerifier(auth, "recaptcha-container", {
+      const triggerId = step === "phone" ? "send-otp-button" : "resend-otp-button";
+      recaptchaRef.current = new RecaptchaVerifier(auth, triggerId, {
         size: "invisible",
+        "expired-callback": () => setError("The security check expired. Please request a new code."),
       });
-
+      await recaptchaRef.current.render();
       confirmationRef.current = await signInWithPhoneNumber(auth, phoneNumber, recaptchaRef.current);
     } catch (sendError) {
       const firebaseCode = typeof sendError === "object" && sendError && "code" in sendError ? String(sendError.code) : "unknown";
@@ -136,6 +137,7 @@ export default function LoginPage() {
       recaptchaRef.current = null;
       setError(`${firebaseErrorMessage(sendError)} You can still enter the verification code or change the phone number.`);
     } finally {
+      setStep("code");
       setLoading(false);
     }
   }
@@ -201,7 +203,6 @@ export default function LoginPage() {
         <div className="mb-5 rounded-[2rem] border border-white/30 bg-white/95 p-1.5 shadow-2xl shadow-blue-950/40">
           <Image src="/MW_POS.png" alt="MW-POS" width={104} height={104} className="h-24 w-24 rounded-[1.65rem] object-contain" priority />
         </div>
-        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-blue-100">MW FutureTech</p>
         <h1 className="mt-2 text-4xl font-black tracking-tight">MW-POS</h1>
         <p className="mt-2 max-w-xs text-sm leading-6 text-blue-100/90">Simple, secure distribution management for every role.</p>
       </header>
@@ -284,7 +285,7 @@ export default function LoginPage() {
                 <button type="button" onClick={editPhone} className="inline-flex items-center font-semibold text-blue-700 hover:text-blue-800">
                   <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Change number
                 </button>
-                <button type="button" onClick={sendCode} disabled={loading} className="font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50">Resend code</button>
+                <button id="resend-otp-button" type="button" onClick={sendCode} disabled={loading} className="font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50">Resend code</button>
               </div>
             </div>
           )}
@@ -309,7 +310,6 @@ export default function LoginPage() {
           <ShieldCheck className="h-3.5 w-3.5" /> Protected by Firebase phone authentication
         </p>
       </section>
-      <button id="recaptcha-container" type="button" tabIndex={-1} className="sr-only" aria-hidden="true" />
     </main>
   );
 }
