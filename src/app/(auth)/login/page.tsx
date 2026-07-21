@@ -130,6 +130,8 @@ export default function LoginPage() {
       });
       await recaptchaRef.current.render();
       confirmationRef.current = await signInWithPhoneNumber(auth, phoneNumber, recaptchaRef.current);
+      recaptchaRef.current.clear();
+      recaptchaRef.current = null;
     } catch (sendError) {
       const firebaseCode = typeof sendError === "object" && sendError && "code" in sendError ? String(sendError.code) : "unknown";
       console.error("[Firebase Phone Auth] SMS request failed:", firebaseCode);
@@ -203,6 +205,13 @@ export default function LoginPage() {
     setError("");
   }
 
+  async function submitLogin(): Promise<void> {
+    if (loading) return;
+    if (step === "code") await verifyCode();
+    else if (isSuperadminPhone) await signInSuperadmin();
+    else await sendCode();
+  }
+
   return (
     <main className="relative isolate min-h-dvh overflow-hidden bg-[#071a45] text-white">
       <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_50%_5%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(160deg,#071a45_10%,#0b2f74_58%,#1456c7_100%)]" />
@@ -236,9 +245,7 @@ export default function LoginPage() {
           className="space-y-5"
           onSubmit={(event) => {
             event.preventDefault();
-            if (step === "code") verifyCode();
-            else if (isSuperadminPhone) signInSuperadmin();
-            else sendCode();
+            void submitLogin();
           }}
         >
           {step === "phone" ? (
@@ -304,12 +311,14 @@ export default function LoginPage() {
 
           <Button
             id={step === "phone" ? "send-otp-button" : undefined}
-            type="submit"
+            type="button"
+            onClick={() => void submitLogin()}
+            aria-busy={loading}
             className="h-12 w-full rounded-xl text-base font-semibold shadow-lg shadow-blue-600/20"
             disabled={loading || (step === "phone" ? !phoneDigits || (isSuperadminPhone && !password) : code.length !== 6)}
           >
             {loading ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{step === "code" ? "Verifying..." : isSuperadminPhone ? "Signing in..." : "Sending code..."}</>
+              <><Loader2 aria-hidden="true" className="mr-2 h-5 w-5 animate-spin" />{step === "code" ? "Verifying & signing in..." : isSuperadminPhone ? "Signing in..." : "Sending code..."}</>
             ) : (
               <>{step === "code" ? "Verify & Sign In" : isSuperadminPhone ? "Sign In as Superadmin" : "Continue with phone"}<ArrowRight className="ml-2 h-4 w-4" /></>
             )}
