@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { UserPlus, Loader2, X, Check, Trash2, Edit3 } from 'lucide-react';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 const roleColors: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   SUPERADMIN: "destructive", ADMIN: "default", ASM: "warning", C_AND_F: "outline", DISTRIBUTOR: "success",
@@ -16,11 +17,11 @@ const roleColors: Record<string, "default" | "success" | "warning" | "destructiv
 
 export default function UsersPage() {
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addForm, setAddForm] = useState({ phone: '', displayName: '', role: 'ASM' });
+  const [addForm, setAddForm] = useState({ phone: '', phoneCode: '+91', displayName: '', role: 'ASM' });
   const [adding, setAdding] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ email: '', phone: '', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
+  const [editForm, setEditForm] = useState({ phone: '', phoneCode: '+91', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
 
   const { data: users, loading, error, live } = useRealtimeList({ path: 'users', fallbackUrl: '/api/users' });
 
@@ -32,7 +33,7 @@ export default function UsersPage() {
       const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone: addForm.phone,
+          phone: `${addForm.phoneCode} ${addForm.phone}`,
           displayName: addForm.displayName || addForm.phone,
           role: addForm.role,
         }),
@@ -43,7 +44,7 @@ export default function UsersPage() {
       }
       setActionMsg('User created successfully');
       setShowAddUser(false);
-      setAddForm({ phone: '', displayName: '', role: 'ASM' });
+      setAddForm({ phone: '', phoneCode: '+91', displayName: '', role: 'ASM' });
     } catch (e: any) {
       setActionMsg('Error: ' + (e.message || 'Failed'));
     } finally { setAdding(false); }
@@ -67,8 +68,8 @@ export default function UsersPage() {
   function openEdit(user: any) {
     setEditingUser(user);
     setEditForm({
-      email: user.email || '',
       phone: user.phone || '',
+      phoneCode: '+91',
       displayName: user.displayName || '',
       role: user.role || 'ASM',
       approvalStatus: user.approvalStatus || '',
@@ -85,8 +86,8 @@ export default function UsersPage() {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         uid: editingUser.uid,
-        email: editForm.email || null,
-        phone: editForm.phone || null,
+        email: null,
+        phone: `${editForm.phoneCode} ${editForm.phone}` || null,
         displayName: editForm.displayName,
         role: editForm.role,
         approvalStatus: editForm.approvalStatus || undefined,
@@ -123,8 +124,11 @@ export default function UsersPage() {
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Phone Number</label>
-                <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" value={addForm.phone}
-                  onChange={e => setAddForm({ ...addForm, phone: e.target.value })} />
+                <PhoneInput
+                  value={addForm.phone}
+                  countryCode={addForm.phoneCode}
+                  onChange={(digits, code) => setAddForm({ ...addForm, phone: digits, phoneCode: code })}
+                />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">Display Name</label>
@@ -149,7 +153,7 @@ export default function UsersPage() {
             </form>
       </Modal>
 
-      <Modal open={!!editingUser} title={`Edit: ${editingUser?.email || editingUser?.phone || editingUser?.uid || 'User'}`} onClose={() => setEditingUser(null)} className="max-w-3xl">
+      <Modal open={!!editingUser} title={`Edit: ${editingUser?.phone || editingUser?.displayName || editingUser?.uid || 'User'}`} onClose={() => setEditingUser(null)} className="max-w-3xl">
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
@@ -157,12 +161,12 @@ export default function UsersPage() {
               <Input value={editForm.displayName} onChange={e => setEditForm({ ...editForm, displayName: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium block mb-1">Email</label>
-              <Input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
-            </div>
-            <div>
               <label className="text-sm font-medium block mb-1">Phone</label>
-              <Input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+              <PhoneInput
+                value={editForm.phone}
+                countryCode={editForm.phoneCode}
+                onChange={(digits, code) => setEditForm({ ...editForm, phone: digits, phoneCode: code })}
+              />
             </div>
             <div>
               <label className="text-sm font-medium block mb-1">Role</label>

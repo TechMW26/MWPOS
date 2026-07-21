@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/modal';
 import { Check, X, UserPlus, Loader2, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
 import type { District, ASMLocation } from '@/types/models';
 
@@ -23,8 +24,8 @@ interface LocationRow {
 
 export default function AsmPage() {
   const [showAdd, setShowAdd] = useState(false);
-  const [addEmail, setAddEmail] = useState('');
   const [addPhone, setAddPhone] = useState('');
+  const [addPhoneCode, setAddPhoneCode] = useState('+91');
   const [addName, setAddName] = useState('');
   const [locations, setLocations] = useState<LocationRow[]>([
     { key: 0, state: '', district: '', ward: '', districtId: '' },
@@ -120,8 +121,7 @@ export default function AsmPage() {
       const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: addEmail || null,
-          phone: addPhone,
+          phone: `${addPhoneCode} ${addPhone}`,
           displayName: addName || addPhone,
           role: 'ASM',
           districtId: asmLocations.length > 0 ? asmLocations[0]!.districtId : '',
@@ -133,7 +133,7 @@ export default function AsmPage() {
         throw new Error(data.message || 'Failed');
       }
       setActionMsg('ASM created');
-      setShowAdd(false); setAddEmail(''); setAddPhone(''); setAddName('');
+      setShowAdd(false); setAddPhone(''); setAddPhoneCode('+91'); setAddName('');
       setLocations([{ key: locationCounter, state: '', district: '', ward: '', districtId: '' }]);
       setLocationCounter(c => c + 1);
       setAreaCache({});
@@ -171,21 +171,19 @@ export default function AsmPage() {
 
       <Modal open={showAdd} title="Add ASM (Area Sales Manager)" onClose={() => setShowAdd(false)}>
             <form onSubmit={handleAdd} className="space-y-5">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-medium block mb-1">Display Name</label>
                   <Input placeholder="John Doe" value={addName}
                     onChange={e => setAddName(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Email Address (optional)</label>
-                  <Input type="email" placeholder="manager@example.com" value={addEmail}
-                    onChange={e => setAddEmail(e.target.value)} />
-                </div>
-                <div>
                   <label className="text-sm font-medium block mb-1">Phone Number</label>
-                  <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" value={addPhone}
-                    onChange={e => setAddPhone(e.target.value)} />
+                  <PhoneInput
+                    value={addPhone}
+                    countryCode={addPhoneCode}
+                    onChange={(digits, code) => { setAddPhone(digits); setAddPhoneCode(code); }}
+                  />
                 </div>
               </div>
 
@@ -287,7 +285,7 @@ export default function AsmPage() {
               <DataTable data={managers} columns={[
                 { key: 'displayName', header: 'Name', render: (m) => (
                   <Link href={`/superadmin/store-managers/${m.uid}`} className="text-blue-600 hover:underline font-medium flex items-center gap-1">
-                    {m.displayName || m.email || m.phone} <ExternalLink className="h-3 w-3" />
+                    {m.displayName || m.phone} <ExternalLink className="h-3 w-3" />
                   </Link>
                 )},
                 { key: 'phone', header: 'Phone', render: (m) => m.phone || '—' },

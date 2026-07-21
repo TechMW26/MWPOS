@@ -3,6 +3,7 @@ import {
   requireRole,
   requireDistrictAccess,
   requireDistributorAccess,
+  districtMatchesTerritory,
   canAssignDistributors,
   canApproveAsm,
   AuthorizationError,
@@ -65,6 +66,20 @@ describe("Authorization", () => {
 
     it("allows ASM to own district", () => {
       expect(() => requireDistrictAccess(approvedAsm, "district1")).not.toThrow();
+    });
+
+    it("matches a distributor location to the ASM territory key", () => {
+      expect(districtMatchesTerritory(
+        "Delhi|New Delhi|Connaught Place",
+        "Delhi|New Delhi|New Delhi|Connaught Place"
+      )).toBe(true);
+    });
+
+    it("rejects a location outside the ASM ward", () => {
+      expect(districtMatchesTerritory(
+        "Delhi|New Delhi|Connaught Place",
+        "Delhi|New Delhi|New Delhi|Karol Bagh"
+      )).toBe(false);
     });
   });
 

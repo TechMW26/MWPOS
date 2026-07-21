@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { districtMatchesTerritory } from "@/lib/auth/authorization";
 import { adminDb } from "@/lib/db/admin";
 import type { Distributor } from "@/types/models";
 
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
   let distributors = Object.values(all).filter((d) => d.isActive);
 
   if (districtId) {
-    distributors = distributors.filter((d) => d.districtId === districtId);
+    distributors = distributors.filter((d) => districtMatchesTerritory(districtId, d.districtId));
   }
 
   // Filter for specific distributor IDs

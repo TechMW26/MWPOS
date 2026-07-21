@@ -75,9 +75,6 @@ export async function PATCH(request: Request) {
     if (parsed.data.displayName) {
       updates.displayName = parsed.data.displayName;
     }
-    if (parsed.data.email !== undefined) {
-      updates.email = parsed.data.email;
-    }
     if (parsed.data.phone !== undefined) {
       if (!parsed.data.phone) throw new Error("Phone number cannot be removed");
       const phone = normalizePhoneNumber(parsed.data.phone);

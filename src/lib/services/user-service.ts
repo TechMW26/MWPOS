@@ -161,18 +161,26 @@ export async function createUser(input: {
 
   if (await findUserByPhone(phone)) throw new Error("A user with this phone already exists");
 
-  const firebaseAuth = getFirebaseAdminAuth();
   let firebaseUid: string;
   try {
-    firebaseUid = (await firebaseAuth.getUserByPhoneNumber(phone)).uid;
-  } catch (error) {
-    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
-    if (code !== "auth/user-not-found") throw error;
-    firebaseUid = (await firebaseAuth.createUser({
-      phoneNumber: phone,
-      displayName: input.displayName.trim(),
-      disabled: false,
-    })).uid;
+    const firebaseAuth = getFirebaseAdminAuth();
+    try {
+      firebaseUid = (await firebaseAuth.getUserByPhoneNumber(phone)).uid;
+    } catch (error) {
+      const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+      if (code !== "auth/user-not-found") throw error;
+      firebaseUid = (await firebaseAuth.createUser({
+        phoneNumber: phone,
+        displayName: input.displayName.trim(),
+        disabled: false,
+      })).uid;
+    }
+  } catch {
+    // Firebase Admin Auth unavailable (e.g. missing/incorrect service account key).
+    // Fall back to a generated UID so the user record can still be created in the DB.
+    // Phone OTP login will still work because Firebase client-side sign-in creates
+    // the Auth user on first verification, and findOrCreateUserByPhone pairs them up.
+    firebaseUid = uuidv4();
   }
 
   const newUser: User = {

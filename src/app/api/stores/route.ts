@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { requireRole } from "@/lib/auth/authorization";
+import { districtMatchesTerritory, requireRole } from "@/lib/auth/authorization";
 import { listStores, createStore, updateStore } from "@/lib/services/store-service";
 import { createStoreSchema } from "@/lib/validation/schemas";
 import { adminDb } from "@/lib/db/admin";
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
   let stores = await listStores(type ?? undefined);
   if (session.role === "ASM") {
-    stores = stores.filter((store) => Boolean(session.districtId && store.districtId === session.districtId));
+    stores = stores.filter((store) => districtMatchesTerritory(session.districtId, store.districtId));
   } else if (session.role === "C_AND_F") {
     const usersSnap = await adminDb.ref("users").get();
     const users = (usersSnap.val() as Record<string, { role: string; cfId?: string | null; districtId?: string | null }> | null) || {};
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     if (!isAdmin && parsed.data.type !== "DISTRIBUTOR") {
       return NextResponse.json({ message: "Only administrators can create distribution warehouses" }, { status: 403 });
     }
-    if (session.role === "ASM" && (!session.districtId || parsed.data.districtId !== session.districtId)) {
+    if (session.role === "ASM" && !districtMatchesTerritory(session.districtId, parsed.data.districtId)) {
       return NextResponse.json({ message: "ASMs can only create distributors in their assigned district" }, { status: 403 });
     }
 
@@ -82,7 +82,7 @@ export async function PATCH(request: Request) {
 
     // Clean allowed fields
     const allowed: Record<string, unknown> = {};
-    const editableFields = ["name", "districtId", "address", "city", "state", "pincode", "phone", "email", "gstin", "ownerUid", "managerUid", "approvalStatus", "isActive"];
+    const editableFields = ["name", "districtId", "address", "city", "state", "pincode", "phone", "gstin", "ownerUid", "managerUid", "approvalStatus", "isActive"];
     for (const key of editableFields) {
       if (key in updates) allowed[key] = updates[key];
     }

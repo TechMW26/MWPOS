@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Plus, Check, X, Trash2, Edit3 } from 'lucide-react';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
 
 export default function DistributorsPage() {
@@ -16,7 +17,7 @@ export default function DistributorsPage() {
   const [createError, setCreateError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+  const [form, setForm] = useState({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', phoneCode:'+91', gstin:'', ownerName:'', ownerPhone:'', ownerPhoneCode:'+91' });
   const [wardOptions, setWardOptions] = useState<string[]>([]);
   const [wardsLoading, setWardsLoading] = useState(false);
 
@@ -50,7 +51,7 @@ export default function DistributorsPage() {
     setCreating(true);
     try {
       const districtId = `${form.state}|${form.district}|${form.city}|${form.ward}`;
-      const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, districtId, type: 'DISTRIBUTOR' }) });
+      const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, phone: form.phoneCode && form.phone ? `${form.phoneCode} ${form.phone}` : form.phone, ownerPhone: form.ownerPhoneCode && form.ownerPhone ? `${form.ownerPhoneCode} ${form.ownerPhone}` : form.ownerPhone, districtId, type: 'DISTRIBUTOR' }) });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const fieldErrors = data?.errors?.fieldErrors
@@ -59,7 +60,7 @@ export default function DistributorsPage() {
         throw new Error(fieldErrors || data?.message || 'Failed to create distributor');
       }
       setShowForm(false);
-      setForm({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+      setForm({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', phoneCode:'+91', gstin:'', ownerName:'', ownerPhone:'', ownerPhoneCode:'+91' });
       await load();
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'Failed to create distributor');
@@ -87,7 +88,7 @@ export default function DistributorsPage() {
       body: JSON.stringify({
         storeId: editing.id, name: editing.name, address: editing.address,
         city: editing.city, state: editing.state, pincode: editing.pincode,
-        phone: editing.phone, email: editing.email, gstin: editing.gstin,
+        phone: editing.phone, gstin: editing.gstin,
         isActive: editing.isActive,
       }),
     });
@@ -115,8 +116,13 @@ export default function DistributorsPage() {
               {createError && <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">{createError}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Input placeholder="Distributor Name *" value={form.name} onChange={e => setForm({...form, name:e.target.value})} required />
-                <Input placeholder="Phone *" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})} required />
-                <Input placeholder="Email (optional)" value={form.email} onChange={e => setForm({...form, email:e.target.value})} />
+                <div>
+                  <PhoneInput
+                    value={form.phone}
+                    countryCode={form.phoneCode}
+                    onChange={(digits, code) => setForm({...form, phone: digits, phoneCode: code})}
+                  />
+                </div>
                 <Input placeholder="GSTIN (optional)" value={form.gstin} onChange={e => setForm({...form, gstin:e.target.value})} />
               </div>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -155,10 +161,15 @@ export default function DistributorsPage() {
               </div>
               <div className="md:col-span-2 border-t pt-3">
                 <p className="text-sm font-medium mb-2">Owner Details (for OTP login)</p>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <Input placeholder="Owner name" value={form.ownerName} onChange={e => setForm({...form, ownerName:e.target.value})} />
-                  <Input placeholder="Owner email for OTP" value={form.ownerEmail} onChange={e => setForm({...form, ownerEmail:e.target.value})} />
-                  <Input placeholder="Owner phone" value={form.ownerPhone} onChange={e => setForm({...form, ownerPhone:e.target.value})} />
+                  <div>
+                    <PhoneInput
+                      value={form.ownerPhone}
+                      countryCode={form.ownerPhoneCode}
+                      onChange={(digits, code) => setForm({...form, ownerPhone: digits, ownerPhoneCode: code})}
+                    />
+                  </div>
                 </div>
               </div>
               <div><Button className="w-full sm:w-auto" type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Distributor'}</Button></div>
@@ -217,10 +228,6 @@ export default function DistributorsPage() {
               <div>
                 <label className="text-sm font-medium block mb-1">Phone</label>
                 <Input value={editing.phone || ''} onChange={e => setEditing({ ...editing, phone: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">Email</label>
-                <Input value={editing.email || ''} onChange={e => setEditing({ ...editing, email: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">GSTIN</label>

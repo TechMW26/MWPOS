@@ -70,7 +70,9 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
           </div>
         </header>
 
-        <main className="px-3 pb-28 pt-4">{children}</main>
+        <main className="px-3 pb-28 pt-4">
+          <div key={pathname} className="animate-page-enter">{children}</div>
+        </main>
 
         <nav className="fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-30 w-[calc(100%-1.5rem)] max-w-[496px] -translate-x-1/2 rounded-[1.75rem] border border-white/70 bg-slate-950/95 p-1.5 shadow-[0_18px_45px_rgba(15,23,42,0.35)] backdrop-blur-xl" aria-label="Primary navigation">
           <div className="grid grid-cols-5 gap-1">
@@ -84,8 +86,8 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
           </div>
         </nav>
 
-        {menuOpen && <div className="fixed inset-0 z-50 bg-slate-950/35 backdrop-blur-sm" onClick={() => setMenuOpen(false)}>
-          <aside className="absolute inset-y-0 right-0 flex w-[min(86vw,360px)] flex-col rounded-l-[2rem] bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        {menuOpen && <div className="fixed inset-0 z-50 animate-overlay bg-slate-950/35 backdrop-blur-sm" onClick={() => setMenuOpen(false)}>
+          <aside className="absolute inset-y-0 right-0 flex w-[min(86vw,360px)] animate-drawer-right flex-col rounded-l-[2rem] bg-white p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between px-1 py-2">
               <div><p className="text-xs font-bold uppercase tracking-wider text-primary">MW-POS</p><p className="text-lg font-bold">{roleLabel}</p></div>
               <button type="button" onClick={() => setMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100" aria-label="Close menu"><X className="h-5 w-5" /></button>

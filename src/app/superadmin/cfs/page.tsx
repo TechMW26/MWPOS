@@ -9,10 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { StatCard } from '@/components/ui/stat-card';
 import { CheckSquare, Edit3, Loader2, Square, Users } from 'lucide-react';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 interface UserRow extends Record<string, unknown> {
   uid: string;
-  email: string | null;
   phone: string | null;
   displayName: string;
   role: string;
@@ -23,7 +23,7 @@ interface UserRow extends Record<string, unknown> {
   createdAt: string;
 }
 
-const emptyEdit = { email: '', phone: '', displayName: '', approvalStatus: '', districtId: '', avatarUrl: '', isActive: true };
+const emptyEdit = { phone: '', phoneCode: '+91', displayName: '', approvalStatus: '', districtId: '', avatarUrl: '', isActive: true };
 
 export default function CfsPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -114,8 +114,8 @@ export default function CfsPage() {
   function openEdit(cf: UserRow) {
     setEditingCf(cf);
     setEditForm({
-      email: cf.email || '',
       phone: cf.phone || '',
+      phoneCode: '+91',
       displayName: cf.displayName || '',
       approvalStatus: cf.approvalStatus || '',
       districtId: cf.districtId || '',
@@ -129,8 +129,7 @@ export default function CfsPage() {
     setSaving(true); setMessage('');
     try {
       await patchUser(editingCf.uid, {
-        email: editForm.email || null,
-        phone: editForm.phone || null,
+        phone: `${editForm.phoneCode} ${editForm.phone}` || null,
         displayName: editForm.displayName,
         role: 'C_AND_F',
         approvalStatus: editForm.approvalStatus || undefined,
@@ -168,7 +167,7 @@ export default function CfsPage() {
         <CardContent>
           <DataTable data={cfs} columns={[
             { key: 'displayName', header: 'Name' },
-            { key: 'email', header: 'Email/Phone', render: u => u.email || u.phone || '-' },
+            { key: 'phone', header: 'Phone', render: u => u.phone || '-' },
             { key: 'assigned', header: 'ASMs', render: u => asms.filter(a => a.cfId === u.uid).length },
             { key: 'isActive', header: 'Active', render: u => <Badge variant={u.isActive ? 'success' : 'destructive'}>{u.isActive ? 'Yes' : 'No'}</Badge> },
             { key: 'actions', header: 'Actions', render: u => <Button size="sm" variant="outline" onClick={() => openEdit(u)}><Edit3 className="h-3 w-3 mr-1" />Edit</Button> },
@@ -179,37 +178,41 @@ export default function CfsPage() {
       <Card>
         <CardHeader><CardTitle>Bulk Assign ASMs</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-end">
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
             <div>
               <label className="mb-1 block text-sm font-medium">Assign to C&amp;F</label>
               <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={selectedCfId} onChange={e => setSelectedCfId(e.target.value)}>
                 <option value="">Select C&amp;F</option>
-                {cfs.map(cf => <option key={cf.uid} value={cf.uid}>{cf.displayName || cf.email || cf.phone}</option>)}
+                {cfs.map(cf => <option key={cf.uid} value={cf.uid}>{cf.displayName || cf.phone}</option>)}
               </select>
             </div>
-            <Button type="button" variant="outline" onClick={() => selectVisible(unassignedAsms.map(a => a.uid))}>Select unassigned</Button>
+            <Button type="button" variant="outline" onClick={() => selectVisible(unassignedAsms.map(a => a.uid))}>Select all</Button>
             <Button type="button" onClick={assignSelected} disabled={!selectedCfId || selectedAsmIds.length === 0 || saving}>Assign selected</Button>
-            <Button type="button" variant="destructive" onClick={unassignSelected} disabled={selectedAsmIds.length === 0 || saving}>Unassign selected</Button>
           </div>
 
-          <DataTable data={asms} columns={[
+          <DataTable data={unassignedAsms} columns={[
             { key: 'select', header: '', render: asm => <input type="checkbox" checked={selectedAsmIds.includes(asm.uid)} onChange={() => toggleAsm(asm.uid)} className="h-4 w-4" /> },
             { key: 'displayName', header: 'ASM' },
-            { key: 'email', header: 'Email/Phone', render: asm => asm.email || asm.phone || '-' },
+            { key: 'phone', header: 'Phone', render: asm => asm.phone || '-' },
             { key: 'districtId', header: 'District', render: asm => asm.districtId || '-' },
-            { key: 'cfId', header: 'Assigned C&F', render: asm => cfs.find(cf => cf.uid === asm.cfId)?.displayName || (asm.cfId ? asm.cfId.slice(0, 8) : <span className="text-muted-foreground">Unassigned</span>) },
             { key: 'status', header: 'Status', render: asm => <Badge variant={asm.isActive ? 'success' : 'destructive'}>{asm.isActive ? 'Active' : 'Inactive'}</Badge> },
-          ]} emptyMessage="No ASM users found." />
+          ]} emptyMessage="No unassigned ASMs found." />
         </CardContent>
       </Card>
 
       {selectedCf && (
         <Card>
-          <CardHeader><CardTitle>ASMs under {selectedCf.displayName || selectedCf.email}</CardTitle></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>ASMs under {selectedCf.displayName || selectedCf.phone}</CardTitle>
+            <Button type="button" variant="destructive" size="sm" onClick={unassignSelected} disabled={selectedAsmIds.length === 0 || saving}>
+              Unassign selected
+            </Button>
+          </CardHeader>
           <CardContent>
             <DataTable data={assignedAsms} columns={[
+              { key: 'select', header: '', render: asm => <input type="checkbox" checked={selectedAsmIds.includes(asm.uid)} onChange={() => toggleAsm(asm.uid)} className="h-4 w-4" /> },
               { key: 'displayName', header: 'ASM' },
-              { key: 'email', header: 'Email/Phone', render: asm => asm.email || asm.phone || '-' },
+              { key: 'phone', header: 'Phone', render: asm => asm.phone || '-' },
               { key: 'districtId', header: 'District', render: asm => asm.districtId || '-' },
               { key: 'isActive', header: 'Active', render: asm => <Badge variant={asm.isActive ? 'success' : 'destructive'}>{asm.isActive ? 'Yes' : 'No'}</Badge> },
             ]} emptyMessage="No ASMs assigned to this C&F." />
@@ -221,8 +224,12 @@ export default function CfsPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div><label className="text-sm font-medium block mb-1">Display Name</label><Input value={editForm.displayName} onChange={e => setEditForm({ ...editForm, displayName: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Email</label><Input value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Phone</label><Input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+            <div><label className="text-sm font-medium block mb-1">Phone</label>
+              <PhoneInput
+                value={editForm.phone}
+                countryCode={editForm.phoneCode}
+                onChange={(digits, code) => setEditForm({ ...editForm, phone: digits, phoneCode: code })}
+              /></div>
             <div><label className="text-sm font-medium block mb-1">Approval Status</label><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editForm.approvalStatus} onChange={e => setEditForm({ ...editForm, approvalStatus: e.target.value })}><option value="">Not required</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option></select></div>
             <div><label className="text-sm font-medium block mb-1">District ID</label><Input value={editForm.districtId} onChange={e => setEditForm({ ...editForm, districtId: e.target.value })} /></div>
             <div><label className="text-sm font-medium block mb-1">Avatar URL</label><Input value={editForm.avatarUrl} onChange={e => setEditForm({ ...editForm, avatarUrl: e.target.value })} /></div>

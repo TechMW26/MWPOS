@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
-import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign, Edit3 } from 'lucide-react';
+import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign, Edit3, Target, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
+import { PhoneInput } from '@/components/ui/phone-input';
 
 export default function AsmDetailPage() {
   const { uid } = useParams<{ uid: string }>();
@@ -21,7 +22,13 @@ export default function AsmDetailPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ email: '', phone: '', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
+  const [targetRupees, setTargetRupees] = useState('');
+  const [targetMonth, setTargetMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [currentTarget, setCurrentTarget] = useState<any>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
+  const [targetSaving, setTargetSaving] = useState(false);
+  const [targetMsg, setTargetMsg] = useState('');
+  const [editForm, setEditForm] = useState({ phone: '', phoneCode: '+91', displayName: '', role: 'ASM', approvalStatus: '', districtId: '', cfId: '', avatarUrl: '', isActive: true });
 
   useEffect(() => {
     async function load() {
@@ -37,8 +44,8 @@ export default function AsmDetailPage() {
         const mgr = (Array.isArray(users) ? users : []).find((u: any) => u.uid === uid);
         setManager(mgr || null);
         if (mgr) setEditForm({
-          email: mgr.email || '',
           phone: mgr.phone || '',
+          phoneCode: '+91',
           displayName: mgr.displayName || '',
           role: mgr.role || 'ASM',
           approvalStatus: mgr.approvalStatus || '',
@@ -65,6 +72,36 @@ export default function AsmDetailPage() {
     }
     load();
   }, [uid]);
+
+  useEffect(() => { loadTarget(); }, [uid, targetMonth]);
+
+  async function loadTarget() {
+    setTargetLoading(true);
+    try {
+      const res = await fetch(`/api/targets?month=${targetMonth}`, { cache: 'no-store' });
+      const data = await res.json();
+      const targets = Array.isArray(data.targets) ? data.targets : [];
+      setCurrentTarget(targets.find((t: any) => t.asmUid === uid) || null);
+    } catch { setCurrentTarget(null); }
+    finally { setTargetLoading(false); }
+  }
+
+  async function saveTarget(e: React.FormEvent) {
+    e.preventDefault();
+    const rupees = Number(targetRupees);
+    if (!rupees || rupees <= 0) { setTargetMsg('Enter a valid amount'); return; }
+    setTargetSaving(true); setTargetMsg('');
+    try {
+      const res = await fetch('/api/targets', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asmUid: uid, month: targetMonth, targetRupees: rupees }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message || 'Failed'); }
+      setTargetMsg('Revenue goal saved');
+      await loadTarget();
+    } catch (e: any) { setTargetMsg(e.message || 'Failed'); }
+    finally { setTargetSaving(false); }
+  }
 
   async function assignStore(storeId: string) {
     await fetch('/api/stores', {
@@ -94,8 +131,8 @@ export default function AsmDetailPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         uid,
-        email: editForm.email || null,
-        phone: editForm.phone || null,
+        email: null,
+        phone: `${editForm.phoneCode} ${editForm.phone}` || null,
         displayName: editForm.displayName,
         role: editForm.role,
         approvalStatus: editForm.approvalStatus || undefined,
@@ -105,7 +142,7 @@ export default function AsmDetailPage() {
         isActive: editForm.isActive,
       }),
     });
-    setManager({ ...manager, ...editForm, approvalStatus: editForm.approvalStatus || null, districtId: editForm.districtId || null, cfId: editForm.cfId || null, avatarUrl: editForm.avatarUrl || null });
+    setManager({ ...manager, ...editForm, email: null, approvalStatus: editForm.approvalStatus || null, districtId: editForm.districtId || null, cfId: editForm.cfId || null, avatarUrl: editForm.avatarUrl || null });
     setEditing(false);
   }
 
@@ -122,8 +159,8 @@ export default function AsmDetailPage() {
       <div className="flex items-center gap-4">
         <Link href="/superadmin/store-managers"><ArrowLeft className="h-5 w-5 text-muted-foreground hover:text-foreground" /></Link>
         <div>
-          <p className="font-semibold">{manager.displayName || manager.email || manager.phone}</p>
-          <p className="text-sm text-muted-foreground">{manager.email} {manager.phone ? '· ' + manager.phone : ''}</p>
+          <p className="font-semibold">{manager.displayName || manager.phone}</p>
+          <p className="text-sm text-muted-foreground">{manager.phone || ''}</p>
         </div>
         <Badge variant={manager.approvalStatus === 'APPROVED' ? 'success' : manager.approvalStatus === 'REJECTED' ? 'destructive' : 'warning'}>
           {manager.approvalStatus || 'N/A'}
@@ -136,8 +173,14 @@ export default function AsmDetailPage() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div><label className="text-sm font-medium block mb-1">Display Name</label><Input value={editForm.displayName} onChange={e => setEditForm({ ...editForm, displayName: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Email</label><Input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
-            <div><label className="text-sm font-medium block mb-1">Phone</label><Input value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Phone</label>
+              <PhoneInput
+                value={editForm.phone}
+                countryCode={editForm.phoneCode}
+                onChange={(digits, code) => setEditForm({ ...editForm, phone: digits, phoneCode: code })}
+              />
+            </div>
             <div><label className="text-sm font-medium block mb-1">Role</label><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })}><option value="ASM">ASM</option><option value="C_AND_F">C&amp;F</option><option value="DISTRIBUTOR">Distributor</option><option value="ADMIN">Admin</option><option value="SUPERADMIN">Superadmin</option></select></div>
             <div><label className="text-sm font-medium block mb-1">Approval Status</label><select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editForm.approvalStatus} onChange={e => setEditForm({ ...editForm, approvalStatus: e.target.value })}><option value="">Not required</option><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="REJECTED">Rejected</option></select></div>
             <div><label className="text-sm font-medium block mb-1">District ID</label><Input value={editForm.districtId} onChange={e => setEditForm({ ...editForm, districtId: e.target.value })} /></div>
@@ -155,6 +198,66 @@ export default function AsmDetailPage() {
         <StatCard title="Completed Orders" value={completedOrders.length} icon={<TrendingUp className="h-4 w-4" />} />
         <StatCard title="Pending Orders" value={pendingOrders.length} icon={<ClipboardList className="h-4 w-4" />} />
       </div>
+
+      {/* Revenue Goal */}
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2"><Target className="h-4 w-4" />Monthly Revenue Goal</CardTitle></CardHeader>
+        <CardContent>
+          <form onSubmit={saveTarget} className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[140px_1fr_auto] sm:items-end">
+              <div>
+                <label className="text-sm font-medium block mb-1">Month</label>
+                <input
+                  type="month"
+                  value={targetMonth}
+                  onChange={e => setTargetMonth(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">Target (₹)</label>
+                <Input
+                  type="number"
+                  placeholder="e.g. 500000"
+                  value={targetRupees}
+                  onChange={e => setTargetRupees(e.target.value)}
+                  min={1}
+                />
+              </div>
+              <Button type="submit" disabled={targetSaving}>
+                {targetSaving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : 'Save Goal'}
+              </Button>
+            </div>
+            {targetMsg && <p className={`text-sm ${targetMsg.includes('Failed') || targetMsg.includes('valid') ? 'text-destructive' : 'text-green-600'}`}>{targetMsg}</p>}
+          </form>
+
+          {targetLoading ? (
+            <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading target...</div>
+          ) : currentTarget ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Progress</span>
+                <span className="font-semibold">{currentTarget.progressPercent}%</span>
+              </div>
+              <div className="h-4 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-orange-500 to-amber-400 transition-[width] duration-700"
+                  style={{ width: `${Math.max(3, currentTarget.progressPercent)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Achieved: {formatCurrency(currentTarget.achievedPaise)}</span>
+                <span>Target: {formatCurrency(currentTarget.targetPaise)}</span>
+              </div>
+              {currentTarget.remainingPaise > 0 && (
+                <p className="text-xs text-muted-foreground">Remaining: {formatCurrency(currentTarget.remainingPaise)}</p>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">No revenue goal set for this month. Set one above.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Assigned Distributors */}
       <Card>

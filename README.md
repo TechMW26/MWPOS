@@ -71,6 +71,8 @@ The configured superadmin phone is the only exception: entering it reveals the p
 
 For development without sending real SMS messages, configure Firebase Authentication test phone numbers in the Firebase Console. Do not disable app verification in production.
 
+An environment-gated master OTP fallback is also available for controlled deployments. Set `ENABLE_MASTER_OTP=true` and a six-digit server-only `LOGIN_MASTER_OTP`. Keep it disabled for public production environments and rotate it immediately if exposed.
+
 ### Order approval OTPs
 
 ASM-created orders use Firebase end to end. Firebase Cloud Messaging notifies the distributor with the order items, quantities, and total. From the order review page, the linked distributor requests a Firebase Phone Auth SMS and enters that code to approve the order. The backend accepts only a fresh Firebase phone ID token belonging to the same distributor session and registered phone number. Firebase Authentication does not support custom order text inside its verification SMS, so the complete summary remains visible in the push notification and approval screen.

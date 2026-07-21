@@ -7,53 +7,13 @@ import {
   signInWithPhoneNumber,
   type ConfirmationResult,
 } from "firebase/auth";
-import { ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole, Phone } from "lucide-react";
+import { ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { normalizePhoneNumber } from "@/lib/auth/phone";
 import { getFirebaseAuth } from "@/lib/db/client";
-
-const COUNTRY_CODES: { code: string; name: string; flag: string }[] = [
-  { code: "+91", name: "India", flag: "🇮🇳" },
-  { code: "+1", name: "United States", flag: "🇺🇸" },
-  { code: "+44", name: "United Kingdom", flag: "🇬🇧" },
-  { code: "+61", name: "Australia", flag: "🇦🇺" },
-  { code: "+86", name: "China", flag: "🇨🇳" },
-  { code: "+49", name: "Germany", flag: "🇩🇪" },
-  { code: "+33", name: "France", flag: "🇫🇷" },
-  { code: "+81", name: "Japan", flag: "🇯🇵" },
-  { code: "+7", name: "Russia", flag: "🇷🇺" },
-  { code: "+55", name: "Brazil", flag: "🇧🇷" },
-  { code: "+971", name: "UAE", flag: "🇦🇪" },
-  { code: "+966", name: "Saudi Arabia", flag: "🇸🇦" },
-  { code: "+65", name: "Singapore", flag: "🇸🇬" },
-  { code: "+60", name: "Malaysia", flag: "🇲🇾" },
-  { code: "+63", name: "Philippines", flag: "🇵🇭" },
-  { code: "+92", name: "Pakistan", flag: "🇵🇰" },
-  { code: "+880", name: "Bangladesh", flag: "🇧🇩" },
-  { code: "+94", name: "Sri Lanka", flag: "🇱🇰" },
-  { code: "+977", name: "Nepal", flag: "🇳🇵" },
-];
-
-function validatePhoneDigits(digits: string, countryCode: string): string | null {
-  if (!digits) return "Phone number is required";
-  if (!/^\d+$/.test(digits)) return "Phone number can only contain digits";
-
-  switch (countryCode) {
-    case "+91":
-      if (digits.length !== 10) return "Indian numbers must be 10 digits";
-      if (!/^[6-9]/.test(digits)) return "Indian numbers must start with 6, 7, 8, or 9";
-      break;
-    case "+1":
-      if (digits.length !== 10) return "US numbers must be 10 digits";
-      break;
-    default:
-      if (digits.length < 7 || digits.length > 14) return "Phone number must be 7–14 digits";
-  }
-  return null;
-}
 
 type LoginStep = "phone" | "code";
 
@@ -72,11 +32,18 @@ function firebaseErrorMessage(error: unknown): string {
     case "auth/quota-exceeded":
       return "Too many attempts. Please wait before trying again.";
     case "auth/captcha-check-failed":
+    case "auth/missing-app-credential":
+    case "auth/invalid-app-credential":
       return "reCAPTCHA verification failed. Please try again.";
+    case "auth/app-not-authorized":
     case "auth/operation-not-allowed":
       return "Phone sign-in is not enabled for this Firebase project.";
     case "auth/unauthorized-domain":
       return "This domain is not authorized in Firebase Authentication.";
+    case "auth/billing-not-enabled":
+      return "Firebase SMS requires billing to be enabled for this project.";
+    case "auth/network-request-failed":
+      return "Firebase could not be reached. Check your connection and try again.";
     default:
       return "Unable to verify this phone number. Please try again.";
   }
@@ -87,7 +54,6 @@ export default function LoginPage() {
   const [step, setStep] = useState<LoginStep>("phone");
   const [countryCode, setCountryCode] = useState("+91");
   const [phoneDigits, setPhoneDigits] = useState("");
-  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [normalizedPhone, setNormalizedPhone] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -113,15 +79,9 @@ export default function LoginPage() {
     if (!isSuperadminPhone) setPassword("");
   }, [isSuperadminPhone]);
 
-  function handlePhoneChange(value: string) {
-    const digits = value.replace(/\D/g, "");
+  function handlePhoneChange(digits: string, code: string) {
     setPhoneDigits(digits);
-    setPhoneError(validatePhoneDigits(digits, countryCode));
-  }
-
-  function handleCountryChange(code: string) {
     setCountryCode(code);
-    setPhoneError(validatePhoneDigits(phoneDigits, code));
   }
 
   async function signInSuperadmin() {
@@ -148,12 +108,6 @@ export default function LoginPage() {
   async function sendCode() {
     setError("");
 
-    const digitsError = validatePhoneDigits(phoneDigits, countryCode);
-    if (digitsError) {
-      setPhoneError(digitsError);
-      return;
-    }
-
     let phoneNumber: string;
     try {
       phoneNumber = normalizePhoneNumber(phone);
@@ -162,34 +116,50 @@ export default function LoginPage() {
       return;
     }
 
+    setNormalizedPhone(phoneNumber);
+    setStep("code");
+    setCode("");
     setLoading(true);
     try {
       const auth = getFirebaseAuth();
       auth.useDeviceLanguage();
       recaptchaRef.current?.clear();
-      recaptchaRef.current = new RecaptchaVerifier(auth, "send-otp-button", {
+      recaptchaRef.current = new RecaptchaVerifier(auth, "recaptcha-container", {
         size: "invisible",
       });
 
       confirmationRef.current = await signInWithPhoneNumber(auth, phoneNumber, recaptchaRef.current);
-      setNormalizedPhone(phoneNumber);
-      setStep("code");
-      setCode("");
     } catch (sendError) {
+      const firebaseCode = typeof sendError === "object" && sendError && "code" in sendError ? String(sendError.code) : "unknown";
+      console.error("[Firebase Phone Auth] SMS request failed:", firebaseCode);
       recaptchaRef.current?.clear();
       recaptchaRef.current = null;
-      setError(firebaseErrorMessage(sendError));
+      setError(`${firebaseErrorMessage(sendError)} You can still enter the verification code or change the phone number.`);
     } finally {
       setLoading(false);
     }
   }
 
   async function verifyCode() {
-    if (!confirmationRef.current || code.length !== 6) return;
+    if (code.length !== 6 || !normalizedPhone) return;
     setError("");
     setLoading(true);
 
     try {
+      const masterResponse = await fetch("/api/auth/firebase-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: normalizedPhone, otp: code }),
+      });
+      const masterData = await masterResponse.json();
+      if (masterResponse.ok) {
+        router.replace(masterData.redirectTo ?? "/storefront/dashboard");
+        router.refresh();
+        return;
+      }
+      if (!masterData.useFirebase) throw new Error(masterData.message ?? "Unable to start your session");
+      if (!confirmationRef.current) throw new Error("SMS delivery could not be confirmed. Use the master code or request a new OTP.");
+
       const credential = await confirmationRef.current.confirm(code);
       const idToken = await credential.user.getIdToken();
       const response = await fetch("/api/auth/firebase-phone", {
@@ -235,35 +205,14 @@ export default function LoginPage() {
           {step === "phone" ? (
             <div className="space-y-2">
               <label htmlFor="phone" className="text-sm font-medium">Phone number</label>
-              <div className="flex gap-2">
-                <Select
-                  value={countryCode}
-                  onChange={(e) => handleCountryChange(e.target.value)}
-                  className="w-[130px] shrink-0"
-                >
-                  {COUNTRY_CODES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.code}
-                    </option>
-                  ))}
-                </Select>
-                <div className="relative flex-1">
-                  <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    placeholder="98765 43210"
-                    value={phoneDigits}
-                    onChange={(e) => handlePhoneChange(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && !loading && !phoneError && phoneDigits && (isSuperadminPhone ? signInSuperadmin() : sendCode())}
-                    className={`pl-10 ${phoneError ? "border-destructive" : ""}`}
-                    autoFocus
-                  />
-                </div>
-              </div>
-              {phoneError && <p className="text-xs text-destructive">{phoneError}</p>}
+              <PhoneInput
+                id="phone"
+                value={phoneDigits}
+                countryCode={countryCode}
+                onChange={handlePhoneChange}
+                onEnter={() => !loading && phoneDigits && (isSuperadminPhone ? signInSuperadmin() : sendCode())}
+                autoFocus
+              />
               {isSuperadminPhone ? (
                 <div className="space-y-2 pt-2">
                   <label htmlFor="password" className="text-sm font-medium">Superadmin password</label>
@@ -317,7 +266,7 @@ export default function LoginPage() {
 
         <CardFooter>
           {step === "phone" ? (
-            <Button id="send-otp-button" className="w-full" onClick={isSuperadminPhone ? signInSuperadmin : sendCode} disabled={loading || !phoneDigits || !!phoneError || (isSuperadminPhone && !password)}>
+            <Button id="send-otp-button" className="w-full" onClick={isSuperadminPhone ? signInSuperadmin : sendCode} disabled={loading || !phoneDigits || (isSuperadminPhone && !password)}>
               {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isSuperadminPhone ? "Signing in..." : "Sending code..."}</> : <>{isSuperadminPhone ? "Sign In as Superadmin" : "Send Verification Code"}<ArrowRight className="ml-2 h-4 w-4" /></>}
             </Button>
           ) : (
@@ -327,6 +276,7 @@ export default function LoginPage() {
           )}
         </CardFooter>
       </Card>
+      <button id="recaptcha-container" type="button" tabIndex={-1} className="sr-only" aria-hidden="true" />
     </div>
   );
 }
