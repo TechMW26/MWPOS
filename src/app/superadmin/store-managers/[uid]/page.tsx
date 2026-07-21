@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
-import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign, Edit3, Target, Loader2 } from 'lucide-react';
+import { ArrowLeft, Store, TrendingUp, ClipboardList, DollarSign, Edit3, Target, Loader2, MapPin } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
 import { PhoneInput } from '@/components/ui/phone-input';
@@ -18,7 +18,6 @@ export default function AsmDetailPage() {
   const { uid } = useParams<{ uid: string }>();
   const [manager, setManager] = useState<any>(null);
   const [stores, setStores] = useState<any[]>([]);
-  const [allStores, setAllStores] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -33,14 +32,14 @@ export default function AsmDetailPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [usersRes, storesRes, allStoresRes] = await Promise.all([
+        const [usersRes, storesRes, ordersRes] = await Promise.all([
           fetch('/api/users?role=ASM'),
-          fetch('/api/stores'),
-          fetch('/api/distributors'),
+          fetch(`/api/distributors?asmUid=${encodeURIComponent(uid)}`),
+          fetch(`/api/orders?asmId=${encodeURIComponent(uid)}`),
         ]);
         const users = await usersRes.json();
-        const allS = await allStoresRes.json();
         const st = await storesRes.json();
+        const managerOrders = await ordersRes.json();
         const mgr = (Array.isArray(users) ? users : []).find((u: any) => u.uid === uid);
         setManager(mgr || null);
         if (mgr) setEditForm({
@@ -55,19 +54,8 @@ export default function AsmDetailPage() {
           isActive: mgr.isActive,
         });
         const storeList = Array.isArray(st) ? st : [];
-        setAllStores(Array.isArray(allS) ? allS : []);
-
-        // Find stores assigned to this manager
-        const managerStores = storeList.filter((s: any) => s.managerUid === uid);
-        setStores(managerStores);
-
-        // Load orders for manager's stores
-        if (managerStores.length > 0) {
-          const orderResults = await Promise.all(
-            managerStores.map((s: any) => fetch('/api/orders?storeId=' + s.id).then(r => r.json()).catch(() => []))
-          );
-          setOrders(orderResults.flat().filter(Boolean));
-        }
+        setStores(storeList);
+        setOrders(Array.isArray(managerOrders) ? managerOrders : []);
       } catch (e) { console.error(e); } finally { setLoading(false); }
     }
     load();
@@ -103,28 +91,6 @@ export default function AsmDetailPage() {
     finally { setTargetSaving(false); }
   }
 
-  async function assignStore(storeId: string) {
-    await fetch('/api/stores', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, managerUid: uid }),
-    });
-    // Refresh
-    const updated = stores.map(s => s.id === storeId ? { ...s, managerUid: uid } : s);
-    const newlyAssigned = allStores.find(s => s.id === storeId);
-    if (newlyAssigned && !updated.find(s => s.id === storeId)) {
-      updated.push({ ...newlyAssigned, managerUid: uid });
-    }
-    setStores(updated);
-  }
-
-  async function unassignStore(storeId: string) {
-    await fetch('/api/stores', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ storeId, managerUid: null }),
-    });
-    setStores(stores.filter(s => s.id !== storeId));
-  }
-
   async function saveManager() {
     await fetch('/api/users', {
       method: 'PATCH',
@@ -152,7 +118,11 @@ export default function AsmDetailPage() {
   const revenue = orders.reduce((s: number, o: any) => s + (o.totalPaise || 0), 0);
   const completedOrders = orders.filter((o: any) => o.status === 'DELIVERED' || o.status === 'COMPLETED');
   const pendingOrders = orders.filter((o: any) => o.status !== 'DELIVERED' && o.status !== 'COMPLETED' && o.status !== 'CANCELLED');
-  const unassignedDistributors = allStores.filter((s: any) => !s.managerUid);
+  const territories = Array.isArray(manager.locations) && manager.locations.length > 0
+    ? manager.locations
+    : manager.districtId
+      ? [{ districtId: manager.districtId }]
+      : [];
 
   return (
     <div className="space-y-6">
@@ -167,6 +137,13 @@ export default function AsmDetailPage() {
         </Badge>
         <Badge variant={manager.isActive ? 'success' : 'destructive'}>{manager.isActive ? 'Active' : 'Inactive'}</Badge>
         <Button variant="outline" size="sm" onClick={() => setEditing(true)}><Edit3 className="h-3 w-3 mr-1" />Edit</Button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3">
+        <span className="flex items-center gap-1.5 text-sm font-medium"><MapPin className="h-4 w-4 text-primary" />Automatic territories</span>
+        {territories.length > 0 ? territories.map((territory: any) => (
+          <Badge key={territory.districtId} variant="outline">{territory.districtId?.split('|').join(' · ')}</Badge>
+        )) : <span className="text-sm text-muted-foreground">No district or ward configured</span>}
       </div>
 
       <Modal open={editing} title="Edit ASM" onClose={() => setEditing(false)} className="max-w-3xl">
@@ -193,7 +170,7 @@ export default function AsmDetailPage() {
       </Modal>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard title="Assigned Distributors" value={stores.length} icon={<Store className="h-4 w-4" />} />
+        <StatCard title="Territory Distributors" value={stores.length} icon={<Store className="h-4 w-4" />} />
         <StatCard title="Revenue" value={formatCurrency(revenue)} icon={<DollarSign className="h-4 w-4" />} />
         <StatCard title="Completed Orders" value={completedOrders.length} icon={<TrendingUp className="h-4 w-4" />} />
         <StatCard title="Pending Orders" value={pendingOrders.length} icon={<ClipboardList className="h-4 w-4" />} />
@@ -259,39 +236,26 @@ export default function AsmDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Assigned Distributors */}
+      {/* Automatic territory distributors */}
       <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-4 w-4" />Assigned Distributors ({stores.length})</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><Store className="h-4 w-4" />Territory Distributors ({stores.length})</CardTitle>
+          <p className="text-sm text-muted-foreground">Automatically populated from matching ASM districts and wards.</p>
+        </CardHeader>
         <CardContent>
           {stores.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No distributors assigned yet.</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No active distributors match this ASM&apos;s district and ward.</p>
           ) : (
             <DataTable data={stores} columns={[
               { key: 'name', header: 'Store' },
               { key: 'city', header: 'City' },
+              { key: 'districtId', header: 'Ward', render: (s) => s.districtId?.split('|').at(-1) || '—' },
               { key: 'phone', header: 'Phone' },
               { key: 'approvalStatus', header: 'Status', render: (s) => <Badge variant={s.approvalStatus === 'APPROVED' ? 'success' : 'warning'}>{s.approvalStatus}</Badge> },
-              { key: 'actions', header: '', render: (s) => (
-                <Button size="sm" variant="outline" className="text-destructive h-7" onClick={() => unassignStore(s.id)}>Remove</Button>
-              )},
             ]} />
           )}
         </CardContent>
       </Card>
-
-      {/* Assign New Distributor */}
-      {unassignedDistributors.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Assign Distributor</CardTitle></CardHeader>
-          <CardContent className="flex items-center gap-3 flex-wrap">
-            <select className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm flex-1 min-w-[200px]"
-              defaultValue="" onChange={e => { if (e.target.value) assignStore(e.target.value); e.target.value = ''; }}>
-              <option value="">Select a distributor...</option>
-              {unassignedDistributors.map((s: any) => <option key={s.id} value={s.id}>{s.name} ({s.city})</option>)}
-            </select>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Recent Orders */}
       <Card>

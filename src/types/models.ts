@@ -487,6 +487,7 @@ export interface SessionData {
   storeIds: string[];
   distributorIds: string[];
   districtId: string | null; // for ASM
+  locations?: ASMLocation[]; // all ASM state/district/ward territories
   cfId: string | null; // for ASM's assigned C&F
   approvalStatus: ApprovalStatus | null;
 }

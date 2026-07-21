@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { districtMatchesTerritory } from "@/lib/auth/authorization";
+import { territoryMatchesResource } from "@/lib/auth/authorization";
 import { adminDb } from "@/lib/db/admin";
 import { listStores } from "@/lib/services/store-service";
-import type { Product, ProductSku } from "@/types/models";
+import type { Product, ProductSku, User } from "@/types/models";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -22,22 +22,19 @@ export async function GET(request: Request) {
   const visibleStores = stores.filter((store) => {
     if (!store.isActive || store.approvalStatus !== "APPROVED") return false;
     if (mine) return store.ownerUid === session.uid || session.storeIds.includes(store.id) || session.distributorIds.includes(store.id);
-    if (session.role === "ASM") return districtMatchesTerritory(session.districtId, store.districtId);
+    if (session.role === "ASM") return territoryMatchesResource(session, store.districtId);
     if (session.role === "C_AND_F") return false;
     return true;
   });
 
   if (session.role === "C_AND_F" && !mine) {
     const usersSnap = await adminDb.ref("users").get();
-    const users = (usersSnap.val() as Record<string, { role?: string; cfId?: string | null; districtId?: string | null }> | null) || {};
-    const districts = Object.values(users)
-      .filter((user) => user.role === "ASM" && user.cfId === session.uid)
-      .map((user) => user.districtId)
-      .filter((districtId): districtId is string => Boolean(districtId));
+    const users = (usersSnap.val() as Record<string, User> | null) || {};
+    const asms = Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid);
     visibleStores.push(...stores.filter((store) =>
       store.isActive
       && store.approvalStatus === "APPROVED"
-      && districts.some((districtId) => districtMatchesTerritory(districtId, store.districtId))
+      && asms.some((asm) => territoryMatchesResource(asm, store.districtId))
     ));
   }
 

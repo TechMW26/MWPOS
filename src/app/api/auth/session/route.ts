@@ -18,6 +18,7 @@ export async function GET() {
       role: session.role,
       approvalStatus: session.approvalStatus,
       districtId: session.districtId,
+      locations: session.locations ?? [],
       cfId: session.cfId,
     },
   });

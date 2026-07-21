@@ -16,8 +16,24 @@ export function requireRole(session: SessionData, ...roles: UserRole[]): void {
 
 export function requireDistrictAccess(session: SessionData, districtId: string): void {
   if (session.role === "SUPERADMIN" || session.role === "ADMIN") return;
-  if (districtMatchesTerritory(session.districtId, districtId)) return;
+  if (territoryMatchesResource(session, districtId)) return;
   throw new AuthorizationError("Access denied. You do not have access to this district.");
+}
+
+export function territoryIds(owner: Pick<SessionData, "districtId" | "locations">): string[] {
+  const configuredLocations = (owner.locations ?? [])
+    .map((location) => location.districtId)
+    .filter((districtId): districtId is string => Boolean(districtId));
+  return configuredLocations.length > 0
+    ? Array.from(new Set(configuredLocations))
+    : owner.districtId ? [owner.districtId] : [];
+}
+
+export function territoryMatchesResource(
+  owner: Pick<SessionData, "districtId" | "locations">,
+  resourceId: string | null | undefined
+): boolean {
+  return territoryIds(owner).some((districtId) => districtMatchesTerritory(districtId, resourceId));
 }
 
 export function districtMatchesTerritory(assignedId: string | null | undefined, resourceId: string | null | undefined): boolean {

@@ -2,6 +2,7 @@ import { adminDb } from "@/lib/db/admin";
 import type { AuditLog, InventoryBalance, Order, SessionData, Store, User } from "@/types/models";
 import type { OrderStatus } from "@/types";
 import type { DashboardActivityRow, DashboardPerformanceRow, DashboardResponse } from "@/types/dashboard";
+import { territoryMatchesResource } from "@/lib/auth/authorization";
 
 export interface DashboardFilters {
   days: number;
@@ -69,10 +70,11 @@ function scopedStores(session: SessionData, stores: Store[], orders: Order[], as
     return stores.filter((store) => ids.includes(store.id));
   }
   if (session.role === "ASM") {
-    return stores.filter((store) => orderDistributorIds.has(store.id) || Boolean(session.districtId && store.districtId === session.districtId));
+    return stores.filter((store) => orderDistributorIds.has(store.id) || territoryMatchesResource(session, store.districtId));
   }
-  const districtIds = new Set(asms.map((asm) => asm.districtId).filter((id): id is string => Boolean(id)));
-  return stores.filter((store) => orderDistributorIds.has(store.id) || (store.type === "DISTRIBUTOR" && Boolean(store.districtId && districtIds.has(store.districtId))));
+  return stores.filter((store) => orderDistributorIds.has(store.id) || (
+    store.type === "DISTRIBUTOR" && asms.some((asm) => territoryMatchesResource(asm, store.districtId))
+  ));
 }
 
 function buildPerformance(

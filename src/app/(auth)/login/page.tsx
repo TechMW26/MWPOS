@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   type ConfirmationResult,
 } from "firebase/auth";
-import { ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole } from "lucide-react";
+import { ArrowLeft, ArrowRight, KeyRound, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { normalizePhoneNumber } from "@/lib/auth/phone";
 import { getFirebaseAuth } from "@/lib/db/client";
@@ -192,32 +192,60 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold tracking-tight sm:text-3xl">MW-POS</CardTitle>
-          <CardDescription>
-            {step === "phone" ? "Sign in with your phone number" : `Enter the code sent to ${normalizedPhone}`}
-          </CardDescription>
-        </CardHeader>
+    <main className="relative isolate min-h-dvh overflow-hidden bg-[#071a45] text-white">
+      <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_50%_5%,rgba(59,130,246,0.38),transparent_36%),linear-gradient(160deg,#071a45_10%,#0b2f74_58%,#1456c7_100%)]" />
+      <div aria-hidden="true" className="absolute -right-24 top-24 h-64 w-64 rounded-full border border-white/10" />
+      <div aria-hidden="true" className="absolute -left-32 top-8 h-72 w-72 rounded-full border border-white/10" />
 
-        <CardContent className="space-y-4">
+      <header className="relative flex min-h-[42dvh] flex-col items-center px-6 pb-28 pt-[max(3rem,env(safe-area-inset-top))] text-center sm:justify-center sm:pb-44">
+        <div className="mb-5 rounded-[2rem] border border-white/30 bg-white/95 p-1.5 shadow-2xl shadow-blue-950/40">
+          <Image src="/icons/icon-192.png" alt="MW-POS" width={104} height={104} className="h-24 w-24 rounded-[1.65rem] object-cover" priority />
+        </div>
+        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-blue-100">MW FutureTech</p>
+        <h1 className="mt-2 text-4xl font-black tracking-tight">MW-POS</h1>
+        <p className="mt-2 max-w-xs text-sm leading-6 text-blue-100/90">Simple, secure distribution management for every role.</p>
+      </header>
+
+      <section className="animate-sheet-up absolute inset-x-0 bottom-0 z-10 mx-auto max-h-[76dvh] w-full overflow-y-auto rounded-t-[2rem] bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 text-slate-950 shadow-[0_-24px_70px_rgba(2,8,23,0.28)] sm:bottom-6 sm:max-w-lg sm:rounded-[2rem] sm:px-8 sm:pb-7">
+        <div aria-hidden="true" className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-slate-200" />
+        <div className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+              {step === "phone" ? "Secure sign in" : "OTP verification"}
+            </span>
+            <ShieldCheck className="h-5 w-5 text-emerald-600" aria-label="Secure authentication" />
+          </div>
+          <h2 className="text-2xl font-bold tracking-tight">{step === "phone" ? "Welcome back" : "Check your messages"}</h2>
+          <p className="mt-1 text-sm leading-5 text-slate-500">
+            {step === "phone" ? "Enter your registered phone number to continue." : `Enter the 6-digit code sent to ${normalizedPhone}.`}
+          </p>
+        </div>
+
+        <form
+          className="space-y-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (step === "code") verifyCode();
+            else if (isSuperadminPhone) signInSuperadmin();
+            else sendCode();
+          }}
+        >
           {step === "phone" ? (
-            <div className="space-y-2">
-              <label htmlFor="phone" className="text-sm font-medium">Phone number</label>
+            <div className="space-y-3">
+              <label htmlFor="phone" className="text-sm font-semibold text-slate-700">Phone number</label>
               <PhoneInput
                 id="phone"
                 value={phoneDigits}
                 countryCode={countryCode}
                 onChange={handlePhoneChange}
-                onEnter={() => !loading && phoneDigits && (isSuperadminPhone ? signInSuperadmin() : sendCode())}
+                className="[&_input]:h-12 [&_input]:rounded-xl [&_select]:h-12 [&_select]:rounded-xl"
                 autoFocus
               />
               {isSuperadminPhone ? (
-                <div className="space-y-2 pt-2">
-                  <label htmlFor="password" className="text-sm font-medium">Superadmin password</label>
+                <div className="animate-in space-y-2 pt-1">
+                  <label htmlFor="password" className="text-sm font-semibold text-slate-700">Administrator password</label>
                   <div className="relative">
-                    <LockKeyhole className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <LockKeyhole className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
                       id="password"
                       type="password"
@@ -225,22 +253,20 @@ export default function LoginPage() {
                       placeholder="Enter your password"
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
-                      onKeyDown={(event) => event.key === "Enter" && password && !loading && signInSuperadmin()}
-                      className="pl-10"
+                      className="h-12 rounded-xl pl-10"
                       autoFocus
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">Superadmin authentication uses your configured password.</p>
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground">We’ll send a 6-digit verification code by SMS.</p>
+                <p className="text-xs text-slate-500">A secure verification code will be sent by SMS.</p>
               )}
             </div>
           ) : (
-            <div className="space-y-2">
-              <label htmlFor="otp" className="text-sm font-medium">Verification code</label>
+            <div className="space-y-3">
+              <label htmlFor="otp" className="text-sm font-semibold text-slate-700">Verification code</label>
               <div className="relative">
-                <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <KeyRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   id="otp"
                   type="text"
@@ -250,33 +276,40 @@ export default function LoginPage() {
                   placeholder="000000"
                   value={code}
                   onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  onKeyDown={(event) => event.key === "Enter" && code.length === 6 && !loading && verifyCode()}
-                  className="pl-10 text-center text-xl tracking-[0.35em]"
+                  className="h-14 rounded-xl pl-10 text-center text-xl font-semibold tracking-[0.4em]"
                   autoFocus
                 />
               </div>
-              <button type="button" onClick={editPhone} className="inline-flex items-center text-sm font-medium text-primary hover:underline">
-                <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Change phone number
-              </button>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <button type="button" onClick={editPhone} className="inline-flex items-center font-semibold text-blue-700 hover:text-blue-800">
+                  <ArrowLeft className="mr-1 h-3.5 w-3.5" /> Change number
+                </button>
+                <button type="button" onClick={sendCode} disabled={loading} className="font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50">Resend code</button>
+              </div>
             </div>
           )}
 
-          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        </CardContent>
+          {error && <p role="alert" className="rounded-xl border border-red-100 bg-red-50 px-3.5 py-3 text-sm text-red-700">{error}</p>}
 
-        <CardFooter>
-          {step === "phone" ? (
-            <Button id="send-otp-button" className="w-full" onClick={isSuperadminPhone ? signInSuperadmin : sendCode} disabled={loading || !phoneDigits || (isSuperadminPhone && !password)}>
-              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isSuperadminPhone ? "Signing in..." : "Sending code..."}</> : <>{isSuperadminPhone ? "Sign In as Superadmin" : "Send Verification Code"}<ArrowRight className="ml-2 h-4 w-4" /></>}
-            </Button>
-          ) : (
-            <Button className="w-full" onClick={verifyCode} disabled={loading || code.length !== 6}>
-              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Verifying...</> : <>Verify &amp; Sign In<ArrowRight className="ml-2 h-4 w-4" /></>}
-            </Button>
-          )}
-        </CardFooter>
-      </Card>
+          <Button
+            id={step === "phone" ? "send-otp-button" : undefined}
+            type="submit"
+            className="h-12 w-full rounded-xl text-base font-semibold shadow-lg shadow-blue-600/20"
+            disabled={loading || (step === "phone" ? !phoneDigits || (isSuperadminPhone && !password) : code.length !== 6)}
+          >
+            {loading ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{step === "code" ? "Verifying..." : isSuperadminPhone ? "Signing in..." : "Sending code..."}</>
+            ) : (
+              <>{step === "code" ? "Verify & Sign In" : isSuperadminPhone ? "Sign In as Superadmin" : "Continue with phone"}<ArrowRight className="ml-2 h-4 w-4" /></>
+            )}
+          </Button>
+        </form>
+
+        <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
+          <ShieldCheck className="h-3.5 w-3.5" /> Protected by Firebase phone authentication
+        </p>
+      </section>
       <button id="recaptcha-container" type="button" tabIndex={-1} className="sr-only" aria-hidden="true" />
-    </div>
+    </main>
   );
 }

@@ -140,6 +140,7 @@ export async function buildSessionData(user: User): Promise<SessionData> {
     storeIds,
     distributorIds,
     districtId: user.districtId,
+    locations: user.locations,
     cfId: user.cfId,
     approvalStatus: user.approvalStatus,
   };

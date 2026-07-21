@@ -4,6 +4,7 @@ import {
   requireDistrictAccess,
   requireDistributorAccess,
   districtMatchesTerritory,
+  territoryMatchesResource,
   canAssignDistributors,
   canApproveAsm,
   AuthorizationError,
@@ -80,6 +81,16 @@ describe("Authorization", () => {
         "Delhi|New Delhi|Connaught Place",
         "Delhi|New Delhi|New Delhi|Karol Bagh"
       )).toBe(false);
+    });
+
+    it("matches any configured ASM territory", () => {
+      expect(territoryMatchesResource({
+        districtId: "Delhi|New Delhi|Connaught Place",
+        locations: [
+          { state: "Delhi", district: "New Delhi", ward: "Connaught Place", districtId: "Delhi|New Delhi|Connaught Place" },
+          { state: "Delhi", district: "South Delhi", ward: "Hauz Khas", districtId: "Delhi|South Delhi|Hauz Khas" },
+        ],
+      }, "Delhi|South Delhi|South Delhi|Hauz Khas")).toBe(true);
     });
   });
 
