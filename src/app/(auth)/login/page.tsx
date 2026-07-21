@@ -199,7 +199,7 @@ export default function LoginPage() {
 
       <header className="relative flex min-h-[42dvh] flex-col items-center px-6 pb-28 pt-[max(3rem,env(safe-area-inset-top))] text-center sm:justify-center sm:pb-44">
         <div className="mb-5 rounded-[2rem] border border-white/30 bg-white/95 p-1.5 shadow-2xl shadow-blue-950/40">
-          <Image src="/icons/icon-192.png" alt="MW-POS" width={104} height={104} className="h-24 w-24 rounded-[1.65rem] object-cover" priority />
+          <Image src="/MW_POS.png" alt="MW-POS" width={104} height={104} className="h-24 w-24 rounded-[1.65rem] object-contain" priority />
         </div>
         <p className="text-xs font-semibold uppercase tracking-[0.32em] text-blue-100">MW FutureTech</p>
         <h1 className="mt-2 text-4xl font-black tracking-tight">MW-POS</h1>
