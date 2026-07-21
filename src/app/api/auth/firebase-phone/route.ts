@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     if ("otp" in parsed.data) {
       phone = normalizePhoneNumber(parsed.data.phone);
       const allowed = await consumeMasterAttempt(request, phone);
-      if (!allowed) return NextResponse.json({ message: "Continue with Firebase verification", useFirebase: true }, { status: 422 });
+      if (!allowed) return NextResponse.json({ message: "Too many master-code attempts. Try again later." }, { status: 429 });
       if (!verifyMasterOtp(parsed.data.otp)) {
         return NextResponse.json({ message: "Continue with Firebase verification", useFirebase: true }, { status: 422 });
       }

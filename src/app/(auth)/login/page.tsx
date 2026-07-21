@@ -148,6 +148,28 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      let firebaseVerificationError: unknown;
+
+      if (confirmationRef.current) {
+        try {
+          const credential = await confirmationRef.current.confirm(code);
+          const idToken = await credential.user.getIdToken();
+          const response = await fetch("/api/auth/firebase-phone", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.message ?? "Unable to start your session");
+
+          router.replace(data.redirectTo ?? "/storefront/dashboard");
+          router.refresh();
+          return;
+        } catch (verificationError) {
+          firebaseVerificationError = verificationError;
+        }
+      }
+
       const masterResponse = await fetch("/api/auth/firebase-phone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,21 +181,9 @@ export default function LoginPage() {
         router.refresh();
         return;
       }
-      if (!masterData.useFirebase) throw new Error(masterData.message ?? "Unable to start your session");
-      if (!confirmationRef.current) throw new Error("SMS delivery could not be confirmed. Use the master code or request a new OTP.");
-
-      const credential = await confirmationRef.current.confirm(code);
-      const idToken = await credential.user.getIdToken();
-      const response = await fetch("/api/auth/firebase-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message ?? "Unable to start your session");
-
-      router.replace(data.redirectTo ?? "/storefront/dashboard");
-      router.refresh();
+      if (masterData.useFirebase && firebaseVerificationError) throw firebaseVerificationError;
+      if (masterData.useFirebase) throw new Error("SMS delivery could not be confirmed. Request a new OTP and try again.");
+      throw new Error(masterData.message ?? "Unable to start your session");
     } catch (verifyError) {
       const message = verifyError instanceof Error && !verifyError.message.startsWith("Firebase:")
         ? verifyError.message
