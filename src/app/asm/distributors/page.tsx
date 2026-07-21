@@ -1,48 +1,26 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import type { Distributor } from '@/types/models'
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronRight, Loader2, MapPin, Phone, Plus, Search, Store, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import type { Distributor } from "@/types/models";
+
+const emptyForm = { name: "", ownerName: "", phone: "", address: "", city: "", state: "", pincode: "", gstin: "", email: "" };
 
 export default function AsmDistributorsPage() {
-  const [distributors, setDistributors] = useState<Distributor[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetch('/api/distributors')
-      .then(r => r.ok ? r.json() : [])
-      .then(setDistributors)
-      .finally(() => setLoading(false))
-  }, [])
-
-  return (
-    <div className="space-y-6">
-      <p className="text-muted-foreground">Distributors in your assigned district</p>
-
-      {loading ? (
-        <p className="text-muted-foreground">Loading...</p>
-      ) : distributors.length === 0 ? (
-        <Card className="p-4 text-center">
-          <p className="text-muted-foreground">No distributors found in your district.</p>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {distributors.map((d) => (
-            <Card key={d.id} className="p-4">
-              <h3 className="font-semibold">{d.name}</h3>
-              <p className="text-sm text-muted-foreground">{d.city}, {d.state}</p>
-              <p className="text-sm">{d.phone}</p>
-              <div className="mt-2 flex gap-2">
-                <Badge variant={d.approvalStatus === 'APPROVED' ? 'default' : 'secondary'}>
-                  {d.approvalStatus}
-                </Badge>
-                {d.gstin && <Badge variant="outline">GST: {d.gstin}</Badge>}
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+  const [distributors, setDistributors] = useState<Distributor[]>([]); const [loading, setLoading] = useState(true); const [open, setOpen] = useState(false); const [search, setSearch] = useState(""); const [districtId, setDistrictId] = useState(""); const [form, setForm] = useState(emptyForm); const [saving, setSaving] = useState(false); const [message, setMessage] = useState("");
+  async function load() { const [distributorsResponse, sessionResponse] = await Promise.all([fetch("/api/distributors", { cache: "no-store" }), fetch("/api/auth/session", { cache: "no-store" })]); const [list, session] = await Promise.all([distributorsResponse.json(), sessionResponse.json()]); setDistributors(Array.isArray(list) ? list : []); setDistrictId(session?.user?.districtId || ""); setLoading(false); }
+  useEffect(() => { load().catch(() => setLoading(false)); if (new URLSearchParams(window.location.search).get("add") === "1") setOpen(true); }, []);
+  const filtered = useMemo(() => { const query = search.trim().toLowerCase(); return distributors.filter((item) => !query || `${item.name} ${item.city} ${item.phone}`.toLowerCase().includes(query)); }, [distributors, search]);
+  function update(key: keyof typeof form, value: string) { setForm((current) => ({ ...current, [key]: value })); }
+  async function submit(event: React.FormEvent) { event.preventDefault(); setSaving(true); setMessage(""); const response = await fetch("/api/stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, type: "DISTRIBUTOR", districtId, ownerPhone: form.phone, email: form.email || null, gstin: form.gstin || null, ownerName: form.ownerName || null, ownerEmail: form.email || null, logoUrl: null }) }); const payload = await response.json(); setSaving(false); if (!response.ok) return setMessage(payload.message || "Unable to add distributor."); setForm(emptyForm); setOpen(false); await load(); }
+  return <div className="space-y-4">
+    <div className="flex items-start justify-between gap-3 px-1"><div><h2 className="text-xl font-bold">My distributors</h2><p className="text-sm text-muted-foreground">Add clients and place their orders</p></div><Button onClick={() => setOpen(true)} className="rounded-full"><Plus className="mr-1.5 h-4 w-4" />Add</Button></div>
+    <label className="flex h-12 items-center gap-2 rounded-2xl border bg-white px-4"><Search className="h-4 w-4 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search name, city or phone" aria-label="Search distributors" /></label>
+    {loading ? <div className="flex min-h-40 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading distributors</div> : filtered.length === 0 ? <div className="rounded-[1.5rem] border bg-white p-10 text-center"><Store className="mx-auto mb-3 h-10 w-10 text-slate-300" /><p className="font-bold">No distributors found</p><Button className="mt-4" onClick={() => setOpen(true)}><Plus className="mr-2 h-4 w-4" />Add first distributor</Button></div> : <div className="space-y-2">{filtered.map((item) => <div key={item.id} className="rounded-[1.45rem] border bg-white p-4 shadow-sm"><div className="flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 font-bold text-blue-700">{item.name.charAt(0).toUpperCase()}</span><div className="min-w-0 flex-1"><p className="truncate font-bold">{item.name}</p><p className="mt-0.5 flex items-center text-xs text-muted-foreground"><MapPin className="mr-1 h-3.5 w-3.5" />{item.city}, {item.state}</p></div><Badge variant={item.approvalStatus === "APPROVED" ? "success" : "warning"}>{item.approvalStatus === "APPROVED" ? "Active" : "Pending"}</Badge></div><div className="mt-3 grid grid-cols-2 gap-2"><a href={`tel:${item.phone}`} className="flex h-11 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold"><Phone className="mr-1.5 h-4 w-4" />Call</a><Link href={`/asm/pos?distributor=${item.id}`} className="flex h-11 items-center justify-center rounded-xl bg-primary text-sm font-semibold text-primary-foreground">Place order <ChevronRight className="ml-1 h-4 w-4" /></Link></div></div>)}</div>}
+    {open && <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 backdrop-blur-sm" onClick={() => setOpen(false)}><form onSubmit={submit} onClick={(event) => event.stopPropagation()} className="mx-auto max-h-[92dvh] w-full max-w-[520px] overflow-auto rounded-t-[2rem] bg-white p-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]"><div className="mb-5 flex items-center justify-between"><div><h3 className="text-xl font-bold">Add distributor</h3><p className="text-sm text-muted-foreground">Admin approval is required before ordering.</p></div><button type="button" onClick={() => setOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100" aria-label="Close"><X className="h-5 w-5" /></button></div><div className="grid gap-3"><Input required minLength={2} value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Business name *" /><Input value={form.ownerName} onChange={(event) => update("ownerName", event.target.value)} placeholder="Owner name" /><Input required inputMode="tel" minLength={10} maxLength={15} value={form.phone} onChange={(event) => update("phone", event.target.value.replace(/\D/g, ""))} placeholder="Phone number *" /><Input type="email" value={form.email} onChange={(event) => update("email", event.target.value)} placeholder="Email (optional)" /><Input required minLength={5} value={form.address} onChange={(event) => update("address", event.target.value)} placeholder="Address *" /><div className="grid grid-cols-2 gap-3"><Input required value={form.city} onChange={(event) => update("city", event.target.value)} placeholder="City *" /><Input required value={form.state} onChange={(event) => update("state", event.target.value)} placeholder="State *" /></div><div className="grid grid-cols-2 gap-3"><Input required inputMode="numeric" value={form.pincode} onChange={(event) => update("pincode", event.target.value)} placeholder="Pincode *" /><Input value={form.gstin} onChange={(event) => update("gstin", event.target.value.toUpperCase())} placeholder="GSTIN" /></div>{message && <p className="text-sm text-red-600">{message}</p>}<Button type="submit" size="lg" disabled={saving || !districtId}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}{saving ? "Adding…" : "Add distributor"}</Button>{!districtId && <p className="text-center text-xs text-red-600">Your ASM account needs an assigned district.</p>}</div></form></div>}
+  </div>;
 }

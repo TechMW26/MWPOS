@@ -3,18 +3,6 @@ import { z } from "zod";
 const optionalText = z.preprocess((value) => value === "" ? null : value, z.string().nullable().optional());
 const optionalEmail = z.preprocess((value) => value === "" ? null : value, z.string().email().nullable().optional());
 
-// ─── Auth Schemas ────────────────────────────────────────────
-
-export const requestOtpSchema = z.object({
-  channel: z.enum(["email", "phone"]),
-  destination: z.string().min(3).max(255),
-});
-
-export const verifyOtpSchema = z.object({
-  challengeId: z.string().min(1),
-  code: z.string().length(6),
-});
-
 // ─── Store Schemas ───────────────────────────────────────────
 
 export const createStoreSchema = z.object({
@@ -104,7 +92,7 @@ export const createOrderSchema = z.object({
 
 export const verifyOrderOtpSchema = z.object({
   orderId: z.string().min(1),
-  otpCode: z.string().length(6),
+  firebaseIdToken: z.string().min(100),
 });
 
 export const createDistrictSchema = z.object({

@@ -19,9 +19,18 @@ import type {
   TaxType,
 } from "./index";
 
+// ─── ASM Location ────────────────────────────────────────────
+export interface ASMLocation {
+  state: string;
+  district: string;
+  ward: string;
+  districtId: string; // composite key: "State|District|Ward"
+}
+
 // ─── User ────────────────────────────────────────────────────
 export interface User {
   uid: string;
+  firebaseUid?: string | null;
   email: string | null;
   phone: string | null;
   displayName: string;
@@ -29,7 +38,8 @@ export interface User {
   approvalStatus: ApprovalStatus | null; // for ASM
   isActive: boolean;
   avatarUrl: string | null;
-  districtId: string | null; // for ASM — assigned district
+  districtId: string | null; // for ASM — assigned district (legacy; use locations)
+  locations?: ASMLocation[]; // for ASM — multiple territory assignments
   cfId: string | null; // for ASM — assigned C&F
   createdAt: string;
   updatedAt: string;
@@ -292,24 +302,6 @@ export interface OrderStatusChange {
   notes: string | null;
 }
 
-// ─── Order OTP Verification Request ──────────────────────────
-export interface OrderOtpRequest {
-  id: string;
-  orderId: string;
-  distributorId: string;
-  distributorPhone: string | null;
-  distributorEmail: string | null;
-  requestedByUid: string;
-  channels: string[]; // ["email", "whatsapp"]
-  hashedOtp: string;
-  status: OtpVerificationStatus;
-  attempts: number;
-  maxAttempts: number;
-  expiresAt: string;
-  createdAt: string;
-  verifiedAt: string | null;
-}
-
 // ─── C&F Assignment ──────────────────────────────────────────
 export interface CfAssignment {
   id: string;
@@ -437,20 +429,6 @@ export interface ReturnItem {
   refundPaise: number;
 }
 
-// ─── OTP Challenge ───────────────────────────────────────────
-export interface OtpChallenge {
-  id: string;
-  destination: string;
-  channel: "email" | "phone";
-  hashedCode: string;
-  attempts: number;
-  maxAttempts: number;
-  expiresAt: string;
-  createdAt: string;
-  verifiedAt: string | null;
-  ipAddress: string;
-}
-
 // ─── Notification ────────────────────────────────────────────
 export interface Notification {
   id: string;
@@ -461,6 +439,17 @@ export interface Notification {
   read: boolean;
   link: string | null;
   createdAt: string;
+}
+
+// ─── ASM Revenue Target ──────────────────────────────────────
+export interface RevenueTarget {
+  id: string;
+  asmUid: string;
+  month: string;
+  targetPaise: number;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Audit Log ───────────────────────────────────────────────

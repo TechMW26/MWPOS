@@ -22,7 +22,6 @@ export function requireDistrictAccess(session: SessionData, districtId: string):
 
 export function requireDistributorAccess(session: SessionData, distributorId: string): void {
   if (session.role === "SUPERADMIN" || session.role === "ADMIN") return;
-  if (session.role === "C_AND_F") return; // C&F can view all distributors under their ASMs
   if (session.distributorIds.includes(distributorId)) return;
   throw new AuthorizationError("Access denied. You do not have access to this distributor.");
 }

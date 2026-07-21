@@ -9,7 +9,6 @@ const SESSION_COOKIE = 'mxpos_session'
 // Routes accessible without authentication
 const PUBLIC_PATHS = [
   '/login',
-  '/verify',
   '/api/',
   '/test-notification',
   '/offline'

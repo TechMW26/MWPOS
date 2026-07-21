@@ -92,9 +92,6 @@ All timestamps in ISO 8601 UTC strings.
 /payments/{paymentId}
   saleId, orderId, amountPaise, method, status, reference, paidAt, customerId
 
-/otpChallenges/{challengeId}
-  destination, channel, hashedCode, attempts, maxAttempts, expiresAt, createdAt, verifiedAt, ipAddress
-
 /idempotencyKeys/{scope}/{key}
   movementId | orderId | saleId, createdAt
 

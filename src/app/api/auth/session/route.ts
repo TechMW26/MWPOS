@@ -17,6 +17,8 @@ export async function GET() {
       displayName: session.displayName,
       role: session.role,
       approvalStatus: session.approvalStatus,
+      districtId: session.districtId,
+      cfId: session.cfId,
     },
   });
 }

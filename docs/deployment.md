@@ -24,6 +24,7 @@ MW-POS is fully Vercel-compatible.
    NEXT_PUBLIC_FIREBASE_PROJECT_ID=<project-id>
    NEXT_PUBLIC_FIREBASE_DATABASE_URL=https://<project>.firebaseio.com
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=<project>.appspot.com
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=<sender-id>
    NEXT_PUBLIC_FIREBASE_APP_ID=<app-id>
    
    FIREBASE_ADMIN_PROJECT_ID=<project-id>
@@ -31,7 +32,9 @@ MW-POS is fully Vercel-compatible.
    FIREBASE_ADMIN_PRIVATE_KEY=<private-key>
    
    SESSION_SECRET=<random-64-char-string>
-   OTP_PROVIDER=email
+   SEED_SUPERADMIN_PHONE=<E.164-phone-number>
+   NEXT_PUBLIC_SUPERADMIN_PHONE=<same-E.164-phone-number>
+   SUPERADMIN_PASSWORD=<strong-unique-password>
    
    SMTP_HOST=<smtp-host>
    SMTP_PORT=587
@@ -48,7 +51,7 @@ MW-POS is fully Vercel-compatible.
 ### Firebase Setup
 
 1. Create a Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-2. Enable **Authentication** (Email/Password provider not needed — only custom tokens)
+2. Enable **Authentication → Sign-in method → Phone**
 3. Enable **Realtime Database** (NOT Firestore)
 4. Generate a service account key from Project Settings → Service Accounts
 5. Copy the private key into `FIREBASE_ADMIN_PRIVATE_KEY` (with `\n` newlines)
@@ -66,8 +69,7 @@ MW-POS is fully Vercel-compatible.
    ```bash
    npm run seed
    ```
-2. Create the first SUPERADMIN user through the login flow
-3. Set the user's role to SUPERADMIN via Firebase Console or Admin SDK
+2. Sign in using the configured superadmin phone and server-side password
 
 ### Emulator Development
 
@@ -91,8 +93,9 @@ The following must be configured for production:
 
 - [ ] Firebase project with RTDB enabled
 - [ ] Service account with RTDB read/write access
-- [ ] Authentication custom token support
-- [ ] SMTP provider for OTP emails
+- [ ] Firebase Phone Authentication enabled
+- [ ] Production and local domains authorized in Firebase Authentication
+- [ ] Firebase test phone numbers configured for non-production testing
 - [ ] `SESSION_SECRET` set (64+ random characters)
 - [ ] All `NEXT_PUBLIC_*` variables for client-side Firebase init
 - [ ] Domain authorized in Firebase Auth

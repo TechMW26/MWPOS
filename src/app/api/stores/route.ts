@@ -11,10 +11,22 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get("type") as "DISTRIBUTION" | "DISTRIBUTOR" | null;
+  const requestedType = searchParams.get("type");
+  const type = (requestedType === "CUSTOMER" ? "DISTRIBUTOR" : requestedType) as "DISTRIBUTION" | "DISTRIBUTOR" | null;
   const mine = searchParams.get("mine") === "1";
 
-  const stores = await listStores(type ?? undefined);
+  let stores = await listStores(type ?? undefined);
+  if (session.role === "ASM") {
+    stores = stores.filter((store) => Boolean(session.districtId && store.districtId === session.districtId));
+  } else if (session.role === "C_AND_F") {
+    const usersSnap = await adminDb.ref("users").get();
+    const users = (usersSnap.val() as Record<string, { role: string; cfId?: string | null; districtId?: string | null }> | null) || {};
+    const districtIds = new Set(Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid).map((user) => user.districtId).filter(Boolean));
+    stores = stores.filter((store) => store.ownerUid === session.uid || store.managerUid === session.uid || Boolean(store.districtId && districtIds.has(store.districtId)));
+  } else if (session.role === "DISTRIBUTOR") {
+    const ids = session.distributorIds.length ? session.distributorIds : session.storeIds;
+    stores = stores.filter((store) => ids.includes(store.id) || store.ownerUid === session.uid);
+  }
   if (mine) {
     return NextResponse.json(stores.filter((store) => store.ownerUid === session.uid || session.storeIds.includes(store.id)));
   }
@@ -32,7 +44,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Invalid data", errors: parsed.error.flatten() }, { status: 400 });
     }
 
-    const store = await createStore(parsed.data, session);
+    const isAdmin = session.role === "SUPERADMIN" || session.role === "ADMIN";
+    if (!isAdmin && !["ASM", "DISTRIBUTOR"].includes(session.role)) {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+    if (!isAdmin && parsed.data.type !== "DISTRIBUTOR") {
+      return NextResponse.json({ message: "Only administrators can create distribution warehouses" }, { status: 403 });
+    }
+    if (session.role === "ASM" && (!session.districtId || parsed.data.districtId !== session.districtId)) {
+      return NextResponse.json({ message: "ASMs can only create distributors in their assigned district" }, { status: 403 });
+    }
+
+    const store = await createStore(session.role === "DISTRIBUTOR" ? { ...parsed.data, ownerUid: session.uid } : parsed.data, session);
     return NextResponse.json(store, { status: 201 });
   } catch (error) {
     return NextResponse.json({ message: error instanceof Error ? error.message : "Failed to create store" }, { status: 500 });

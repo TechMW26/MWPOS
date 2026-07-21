@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { adminDb } from "@/lib/db/admin";
 import { listStores } from "@/lib/services/store-service";
+import type { Product, ProductSku } from "@/types/models";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -18,14 +19,32 @@ export async function GET(request: Request) {
   ]);
 
   const visibleStores = stores.filter((store) => {
+    if (!store.isActive || store.approvalStatus !== "APPROVED") return false;
     if (mine) return store.ownerUid === session.uid || session.storeIds.includes(store.id) || session.distributorIds.includes(store.id);
     if (session.role === "ASM" && session.districtId) return store.districtId === session.districtId;
+    if (session.role === "C_AND_F") return false;
     return true;
   });
 
+  if (session.role === "C_AND_F" && !mine) {
+    const usersSnap = await adminDb.ref("users").get();
+    const users = (usersSnap.val() as Record<string, { role?: string; cfId?: string | null; districtId?: string | null }> | null) || {};
+    const districts = new Set(Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid).map((user) => user.districtId).filter(Boolean));
+    visibleStores.push(...stores.filter((store) => store.isActive && store.approvalStatus === "APPROVED" && Boolean(store.districtId && districts.has(store.districtId))));
+  }
+
+  const products = productSnap.exists() ? Object.values(productSnap.val() as Record<string, Product>) : [];
+  const activeProducts = products.filter((product) => product.isActive !== false);
+  const activeProductIds = new Set(activeProducts.map((product) => product.id));
+  const skus = skuSnap.exists() ? Object.values(skuSnap.val() as Record<string, ProductSku>) : [];
+  const activeSkus = skus.filter((sku) => sku.isActive !== false && activeProductIds.has(sku.productId));
+  const productIdsWithSkus = new Set(activeSkus.map((sku) => sku.productId));
+
   return NextResponse.json({
-    skus: skuSnap.exists() ? Object.values(skuSnap.val()) : [],
-    products: productSnap.exists() ? Object.values(productSnap.val()) : [],
+    skus: activeSkus,
+    products: activeProducts.filter((product) => productIdsWithSkus.has(product.id)),
     stores: visibleStores,
+  }, {
+    headers: { "Cache-Control": "private, max-age=15, stale-while-revalidate=60" },
   });
 }

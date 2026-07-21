@@ -16,7 +16,7 @@ const roleColors: Record<string, "default" | "success" | "warning" | "destructiv
 
 export default function UsersPage() {
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addForm, setAddForm] = useState({ email: '', phone: '', displayName: '', role: 'ASM' });
+  const [addForm, setAddForm] = useState({ phone: '', displayName: '', role: 'ASM' });
   const [adding, setAdding] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const [editingUser, setEditingUser] = useState<any>(null);
@@ -26,15 +26,14 @@ export default function UsersPage() {
 
   async function handleAddUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!addForm.email && !addForm.phone) { setActionMsg('Email or phone required'); return; }
+    if (!addForm.phone) { setActionMsg('Phone number required'); return; }
     setAdding(true); setActionMsg('');
     try {
       const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: addForm.email || null,
-          phone: addForm.phone || null,
-          displayName: addForm.displayName || addForm.email || addForm.phone,
+          phone: addForm.phone,
+          displayName: addForm.displayName || addForm.phone,
           role: addForm.role,
         }),
       });
@@ -44,7 +43,7 @@ export default function UsersPage() {
       }
       setActionMsg('User created successfully');
       setShowAddUser(false);
-      setAddForm({ email: '', phone: '', displayName: '', role: 'ASM' });
+      setAddForm({ phone: '', displayName: '', role: 'ASM' });
     } catch (e: any) {
       setActionMsg('Error: ' + (e.message || 'Failed'));
     } finally { setAdding(false); }
@@ -123,13 +122,8 @@ export default function UsersPage() {
       <Modal open={showAddUser} title="Add New User" onClose={() => setShowAddUser(false)} className="max-w-2xl">
             <form onSubmit={handleAddUser} className="space-y-4">
               <div>
-                <label className="text-sm font-medium block mb-1">Email Address</label>
-                <Input type="email" placeholder="user@example.com" value={addForm.email}
-                  onChange={e => setAddForm({ ...addForm, email: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">Phone (optional)</label>
-                <Input type="tel" placeholder="+91..." value={addForm.phone}
+                <label className="text-sm font-medium block mb-1">Phone Number</label>
+                <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" value={addForm.phone}
                   onChange={e => setAddForm({ ...addForm, phone: e.target.value })} />
               </div>
               <div>
@@ -222,7 +216,7 @@ export default function UsersPage() {
       ) : (
         <Card><CardHeader><CardTitle>All Users ({users.length})</CardTitle></CardHeader><CardContent>
           <DataTable data={users} columns={[
-            { key: 'email', header: 'Email/Phone', render: (u) => u.email || u.phone || '—' },
+            { key: 'phone', header: 'Phone', render: (u) => u.phone || '—' },
             { key: 'displayName', header: 'Name' },
             { key: 'role', header: 'Role', render: (u) => (
               <select className="h-8 rounded border px-2 text-xs font-medium bg-background" value={u.role}

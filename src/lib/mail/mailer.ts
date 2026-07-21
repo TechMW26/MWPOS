@@ -55,6 +55,12 @@ function wrapHtml(title: string, body: string): string {
   `;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
+  })[character] || character);
+}
+
 // ─── Public API ──────────────────────────────────────────────
 
 /** Deliver a login OTP by email. Falls back to console log when SMTP is not configured or fails. */
@@ -131,18 +137,18 @@ export async function sendNotificationEmail(input: {
   subject: string;
   title: string;
   message: string;
-}): Promise<void> {
+}): Promise<boolean> {
   let transporter: Transporter | null;
   try {
     transporter = await getTransporter();
   } catch {
     console.warn(`[MAIL] Skipping notification to ${input.to} — SMTP unavailable`);
-    return;
+    return false;
   }
 
   if (!transporter) {
     console.info(`[MAIL] (no SMTP configured) Notification skipped for ${input.to}: ${input.subject}`);
-    return;
+    return false;
   }
 
   const from = getFrom();
@@ -155,11 +161,13 @@ export async function sendNotificationEmail(input: {
       text: `${input.message}`,
       html: wrapHtml(
         input.title,
-        `<p style="margin:0 0 12px;font-size:14px;color:#334155;white-space:pre-wrap">${input.message}</p>`
+        `<p style="margin:0 0 12px;font-size:14px;color:#334155;white-space:pre-wrap">${escapeHtml(input.message)}</p>`
       ),
     });
     console.info(`[MAIL] Notification sent to ${input.to}: ${input.subject}`);
+    return true;
   } catch (err) {
     console.error(`[MAIL] Failed to send notification to ${input.to}:`, err instanceof Error ? err.message : err);
+    return false;
   }
 }

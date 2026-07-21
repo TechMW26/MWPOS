@@ -87,7 +87,7 @@ export default function POSPage() {
     }
     addToast({
       title: 'Order placed',
-      message: data.otpCode ? `OTP sent to distributor. OTP: ${data.otpCode} (valid 24h)` : 'Order created successfully.',
+      message: data.notificationDelivery?.sent ? 'Distributor notified. Approval uses Firebase OTP.' : 'Order created. Distributor can approve it using Firebase OTP.',
       type: 'success',
     });
     setCart([]);

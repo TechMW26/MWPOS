@@ -284,6 +284,13 @@ function SignOutLink() {
 
   async function handleSignOut() {
     try {
+      const [{ signOut }, { getFirebaseAuth }] = await Promise.all([
+        import("firebase/auth"),
+        import("@/lib/db/client"),
+      ]);
+      await signOut(getFirebaseAuth());
+    } catch { /* ignore */ }
+    try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch { /* ignore */ }
     router.push("/login");

@@ -16,9 +16,23 @@ export default function DistributorsPage() {
   const [createError, setCreateError] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name:'', state:'', district:'', address:'', city:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+  const [form, setForm] = useState({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+  const [wardOptions, setWardOptions] = useState<string[]>([]);
+  const [wardsLoading, setWardsLoading] = useState(false);
 
   const districtsForState = useMemo(() => getDistrictsForState(form.state), [form.state]);
+
+  useEffect(() => {
+    if (!form.state || !form.city) { setWardOptions([]); return; }
+    const controller = new AbortController();
+    setWardsLoading(true);
+    fetch(`/api/geo/areas?state=${encodeURIComponent(form.state)}&city=${encodeURIComponent(form.city)}`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setWardOptions(Array.isArray(data) ? data : []))
+      .catch(() => setWardOptions([]))
+      .finally(() => setWardsLoading(false));
+    return () => controller.abort();
+  }, [form.state, form.city]);
 
   async function load() {
     try {
@@ -32,10 +46,11 @@ export default function DistributorsPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setCreateError('');
-    if (!form.state || !form.district) { alert('Please select state and district'); return; }
+    if (!form.state || !form.district || !form.city || !form.ward) { setCreateError('Please fill all location fields: State, District, City and Ward'); return; }
     setCreating(true);
     try {
-      const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, districtId: form.district, type: 'DISTRIBUTOR' }) });
+      const districtId = `${form.state}|${form.district}|${form.city}|${form.ward}`;
+      const res = await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...form, districtId, type: 'DISTRIBUTOR' }) });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const fieldErrors = data?.errors?.fieldErrors
@@ -44,7 +59,7 @@ export default function DistributorsPage() {
         throw new Error(fieldErrors || data?.message || 'Failed to create distributor');
       }
       setShowForm(false);
-      setForm({ name:'', state:'', district:'', address:'', city:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
+      setForm({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', email:'', gstin:'', ownerName:'', ownerEmail:'', ownerPhone:'' });
       await load();
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : 'Failed to create distributor');
@@ -107,16 +122,30 @@ export default function DistributorsPage() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <label className="text-sm font-medium block mb-1">State</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.state} onChange={e => setForm({...form, state:e.target.value, district:''})} required>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.state} onChange={e => setForm({...form, state:e.target.value, district:'', city:'', ward:''})} required>
                     <option value="">Select State *</option>
                     {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-sm font-medium block mb-1">District</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.district} onChange={e => setForm({...form, district:e.target.value})} required disabled={!form.state}>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.district} onChange={e => setForm({...form, district:e.target.value, city:'', ward:''})} required disabled={!form.state}>
                     <option value="">{form.state ? 'Select District *' : 'Select state first'}</option>
                     {districtsForState.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">City</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.city} onChange={e => setForm({...form, city:e.target.value, ward:''})} required disabled={!form.district}>
+                    <option value="">{form.district ? 'Select City *' : 'Select district first'}</option>
+                    {districtsForState.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium block mb-1">Ward / Area</label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.ward} onChange={e => setForm({...form, ward:e.target.value})} required disabled={!form.city}>
+                    <option value="">{wardsLoading ? 'Loading...' : form.city ? 'Select Ward *' : 'Select city first'}</option>
+                    {wardOptions.map(w => <option key={w} value={w}>{w}</option>)}
                   </select>
                 </div>
               </div>

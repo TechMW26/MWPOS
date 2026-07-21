@@ -2,12 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, CheckCircle2, Clock, Edit3, KeyRound, Loader2, Package, ReceiptText, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, Edit3, History, KeyRound, Loader2, Package, ReceiptText, ShieldCheck, UserRoundCheck, XCircle } from 'lucide-react';
+
+const FirebaseOrderApproval = dynamic(
+  () => import('@/components/firebase-order-approval').then((module) => module.FirebaseOrderApproval),
+  { ssr: false },
+);
 
 interface OrderSummaryProps {
   orderId: string;
@@ -97,14 +103,25 @@ const statusCopy: Record<string, { label: string; description: string; nextStep:
   },
 };
 
+const allowedTransitions: Record<string, string[]> = {
+  PENDING_OTP: ['CANCELLED'],
+  OTP_VERIFIED: ['PENDING_CF_APPROVAL', 'CF_APPROVED', 'CANCELLED'],
+  PENDING_CF_APPROVAL: ['CF_APPROVED', 'CF_REJECTED', 'CANCELLED'],
+  CF_APPROVED: ['ALLOCATED', 'CANCELLED'],
+  ALLOCATED: ['PICKING', 'CANCELLED'],
+  PICKING: ['PACKED', 'CANCELLED'],
+  PACKED: ['SHIPPED', 'CANCELLED'],
+  SHIPPED: ['DELIVERED'],
+};
+
+function readable(value: string): string {
+  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [verifying, setVerifying] = useState(false);
-  const [otpError, setOtpError] = useState('');
-  const [otpSuccess, setOtpSuccess] = useState(false);
 
   // Edit quantity state
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -115,6 +132,9 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
 
   // Delete state
   const [deleting, setDeleting] = useState(false);
+  const [transitioning, setTransitioning] = useState('');
+  const [transitionNotes, setTransitionNotes] = useState('');
+  const [transitionError, setTransitionError] = useState('');
 
   const loadOrder = () => {
     fetch(`/api/orders?orderId=${encodeURIComponent(orderId)}`)
@@ -128,30 +148,6 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   };
 
   useEffect(() => { loadOrder(); }, [orderId]);
-
-  async function handleVerifyOtp() {
-    if (!otpCode || otpCode.length !== 6) {
-      setOtpError('Please enter the 6-digit OTP');
-      return;
-    }
-    setVerifying(true);
-    setOtpError('');
-    try {
-      const res = await fetch('/api/orders/otp-verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, otpCode }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'OTP verification failed');
-      setOtpSuccess(true);
-      loadOrder();
-    } catch (e: any) {
-      setOtpError(e.message || 'Verification failed');
-    } finally {
-      setVerifying(false);
-    }
-  }
 
   async function handleEditQuantity(e: React.FormEvent) {
     e.preventDefault();
@@ -176,7 +172,7 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   }
 
   async function handleDeleteOrder() {
-    if (!confirm(`Delete order #${orderId.slice(0, 8)}? This cannot be undone.`)) return;
+    if (!confirm(`Cancel order #${orderId.slice(0, 8)}? This will be recorded in its history.`)) return;
     setDeleting(true);
     try {
       const res = await fetch('/api/orders/transition', {
@@ -185,17 +181,44 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
         body: JSON.stringify({ orderId, toStatus: 'CANCELLED', idempotencyKey: crypto.randomUUID() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Failed to delete');
+      if (!res.ok) throw new Error(data.message || 'Failed to cancel order');
       window.location.href = backHref;
     } catch (e: any) {
-      alert(e.message || 'Failed to delete');
+      alert(e.message || 'Failed to cancel order');
     } finally {
       setDeleting(false);
     }
   }
 
-  const canEditQuantity = role === 'C_AND_F' && !['DELIVERED', 'CANCELLED', 'REJECTED', 'CF_REJECTED'].includes(order?.status);
-  const canDelete = role === 'C_AND_F' || (role === 'ASM' && order?.status === 'PENDING_OTP');
+  async function handleTransition(toStatus: string) {
+    setTransitioning(toStatus);
+    setTransitionError('');
+    try {
+      const isCfDecision = order.status === 'PENDING_CF_APPROVAL' && ['CF_APPROVED', 'CF_REJECTED'].includes(toStatus);
+      const response = await fetch(isCfDecision ? '/api/orders/cf-approve' : '/api/orders/transition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isCfDecision
+          ? { orderId, action: toStatus === 'CF_APPROVED' ? 'APPROVE' : 'REJECT', notes: transitionNotes.trim() || undefined }
+          : { orderId, toStatus, notes: transitionNotes.trim() || undefined, idempotencyKey: crypto.randomUUID() }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || 'Unable to update order');
+      setTransitionNotes('');
+      loadOrder();
+    } catch (transitionFailure) {
+      setTransitionError(transitionFailure instanceof Error ? transitionFailure.message : 'Unable to update order');
+    } finally {
+      setTransitioning('');
+    }
+  }
+
+  const canManageOrder = ['SUPERADMIN', 'ADMIN', 'C_AND_F'].includes(role || '');
+  const canVerifyOtp = role === 'DISTRIBUTOR';
+  const canEditQuantity = ['SUPERADMIN', 'ADMIN'].includes(role || '')
+    ? !['DELIVERED', 'CANCELLED', 'REJECTED', 'CF_REJECTED'].includes(order?.status)
+    : role === 'C_AND_F' && ['PENDING_CF_APPROVAL', 'CF_APPROVED', 'ALLOCATED', 'PICKING', 'PACKED'].includes(order?.status);
+  const canCancel = canManageOrder && (allowedTransitions[order?.status] || []).includes('CANCELLED');
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading order summary...</div>;
 
@@ -216,6 +239,11 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
     description: 'Latest order status is shown below.',
     nextStep: 'Check with the assigned team for the next action.',
   };
+  const timeline = Array.isArray(order.timeline)
+    ? order.timeline
+    : Object.entries(order.statusHistory || {}).map(([id, change]: [string, any]) => ({ id, ...change })).sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
+  const editTimeline = Array.isArray(order.editTimeline) ? order.editTimeline : [];
+  const transitions = canManageOrder ? (allowedTransitions[order.status] || []).filter((item) => item !== 'CANCELLED') : [];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -300,50 +328,63 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
                 </p>
               )}
               {order.paymentReference && <p className="mt-2 text-muted-foreground">Reference: {order.paymentReference}</p>}
-              {order.paymentMode === 'PAY_LATER' && <p className="mt-2 text-muted-foreground">This order has been added to khata immediately.</p>}
+              {order.paymentMode === 'PAY_LATER' && <p className="mt-2 text-muted-foreground">{order.asmId && order.otpStatus !== 'VERIFIED' ? 'Khata will be updated only after distributor OTP approval.' : 'This order has been added to khata.'}</p>}
               {order.otpStatus === 'PENDING' && <p className="mt-2 text-yellow-700">Distributor OTP verification is still pending.</p>}
+              {order.otpStatus === 'EXPIRED' && <p className="mt-2 text-red-700">The OTP expired. Send a new one before approval.</p>}
+              {order.otpStatus === 'FAILED' && <p className="mt-2 text-red-700">OTP attempts were exhausted. Send a new OTP.</p>}
               {order.otpStatus === 'VERIFIED' && <p className="mt-2 text-green-700">✓ Distributor OTP verified.</p>}
             </div>
 
             {/* OTP Verification Input */}
-            {order.otpStatus === 'PENDING' && !otpSuccess && (
-              <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4">
-                <p className="flex items-center gap-2 text-sm font-semibold text-yellow-800">
-                  <KeyRound className="h-4 w-4" />
-                  Verify Distributor OTP
-                </p>
-                <p className="mt-1 text-xs text-yellow-700">
-                  Enter the 6-digit OTP sent to the distributor
-                  {order.otpDestination ? ` (${order.otpChannel}: ${order.otpDestination})` : ''}.
-                  {order.otpExpiresAt && ` Expires: ${new Date(order.otpExpiresAt).toLocaleString()}.`}
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Input
-                    placeholder="Enter 6-digit OTP"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    maxLength={6}
-                    className="font-mono text-lg tracking-widest"
-                    disabled={verifying}
-                  />
-                  <Button onClick={handleVerifyOtp} disabled={verifying || otpCode.length !== 6}>
-                    {verifying ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <KeyRound className="h-4 w-4 mr-1" />}
-                    Verify
-                  </Button>
-                </div>
-                {otpError && <p className="mt-2 text-sm text-red-600">{otpError}</p>}
-              </div>
-            )}
-            {otpSuccess && (
-              <div className="rounded-lg border border-green-300 bg-green-50 p-4">
-                <p className="flex items-center gap-2 text-sm font-semibold text-green-800">
-                  <CheckCircle2 className="h-4 w-4" />
-                  OTP Verified Successfully
-                </p>
-                <p className="mt-1 text-xs text-green-700">The order is now moving to the next stage.</p>
-              </div>
-            )}
+            {order.status === 'PENDING_OTP' && (canVerifyOtp
+              ? <FirebaseOrderApproval orderId={orderId} phone={order.context?.distributor?.phone || null} onVerified={loadOrder} />
+              : <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4"><p className="flex items-center gap-2 text-sm font-semibold text-yellow-800"><KeyRound className="h-4 w-4" />Distributor approval required</p><p className="mt-2 text-sm text-yellow-800">The distributor has been notified through Firebase. Only their linked account can request and enter the Firebase OTP.</p></div>)}
           </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><UserRoundCheck className="h-5 w-5" />Order attribution</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Distributor</span><strong className="text-right">{order.context?.distributor?.name || order.distributorId}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Placed by</span><strong className="text-right">{order.context?.placedBy?.name || order.placedByUid}<span className="block text-xs font-normal text-muted-foreground">{readable(order.context?.placedBy?.role || 'USER')}</span></strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Responsible ASM</span><strong className="text-right">{order.context?.asm?.name || (order.asmId ? order.asmId : 'Direct distributor order')}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">Assigned C&amp;F</span><strong className="text-right">{order.context?.cf?.name || 'Not assigned'}</strong></div>
+            <div className="flex justify-between gap-4"><span className="text-muted-foreground">C&amp;F approval</span><Badge variant={order.cfApprovalStatus === 'APPROVED' ? 'success' : order.cfApprovalStatus === 'REJECTED' ? 'destructive' : 'warning'}>{readable(order.cfApprovalStatus || 'NOT REQUIRED')}</Badge></div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><ShieldCheck className="h-5 w-5" />Approval history</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {timeline.filter((event: any) => ['PENDING_OTP', 'OTP_VERIFIED', 'PENDING_CF_APPROVAL', 'CF_APPROVED', 'CF_REJECTED', 'REJECTED'].includes(event.to)).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No approval events recorded yet.</p>
+            ) : timeline.filter((event: any) => ['PENDING_OTP', 'OTP_VERIFIED', 'PENDING_CF_APPROVAL', 'CF_APPROVED', 'CF_REJECTED', 'REJECTED'].includes(event.to)).map((event: any) => (
+              <div key={event.id} className="flex items-start gap-3 rounded-lg border p-3 text-sm">
+                {['CF_REJECTED', 'REJECTED'].includes(event.to) ? <XCircle className="mt-0.5 h-4 w-4 text-destructive" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 text-primary" />}
+                <div><p className="font-medium">{readable(event.to)}</p><p className="text-muted-foreground">{event.actorName || event.changedBy} · {new Date(event.changedAt).toLocaleString('en-IN')}</p>{event.notes && <p className="mt-1 text-muted-foreground">{event.notes}</p>}</div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><History className="h-5 w-5" />Complete order timeline</CardTitle></CardHeader>
+        <CardContent>
+          {timeline.length === 0 ? <p className="text-sm text-muted-foreground">No timeline events recorded.</p> : (
+            <ol>
+              {timeline.map((event: any, index: number) => (
+                <li key={event.id} className="relative grid grid-cols-[1.25rem_1fr] gap-3 pb-5 last:pb-0">
+                  {index < timeline.length - 1 && <span className="absolute left-[0.59rem] top-4 h-full w-px bg-border" />}
+                  <span className="relative mt-1 h-5 w-5 rounded-full border-4 border-card bg-primary" />
+                  <div><div className="flex flex-wrap items-center gap-2"><p className="font-medium">{readable(event.to)}</p>{event.from && <span className="text-xs text-muted-foreground">from {readable(event.from)}</span>}</div><p className="text-sm text-muted-foreground">{event.actorName || event.changedBy}{event.actorRole ? ` (${readable(event.actorRole)})` : ''} · {new Date(event.changedAt).toLocaleString('en-IN')}</p>{event.notes && <p className="mt-1 text-sm">{event.notes}</p>}</div>
+                </li>
+              ))}
+            </ol>
+          )}
+          {editTimeline.length > 0 && <div className="mt-6 border-t pt-4"><p className="mb-3 font-semibold">Item edit history</p><div className="space-y-3">{editTimeline.map((edit: any) => <div key={edit.id} className="rounded-lg border p-3 text-sm"><p className="font-medium">{edit.actorName} changed {edit.skuId} from {edit.oldQuantity} to {edit.newQuantity}</p><p className="text-muted-foreground">{new Date(edit.editedAt).toLocaleString('en-IN')} · {edit.reason}</p><p className="text-muted-foreground">Order total: {formatCurrency(edit.oldTotal || 0)} → {formatCurrency(edit.newTotal || 0)}</p></div>)}</div></div>}
         </CardContent>
       </Card>
 
@@ -377,20 +418,26 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
         </Card>
       )}
 
-      {/* Admin Actions */}
-      {(canEditQuantity || canDelete) && (
+      {/* Role-scoped workflow actions */}
+      {(canEditQuantity || canCancel || transitions.length > 0) && (
         <Card className="mx-auto max-w-4xl">
-          <CardHeader><CardTitle className="text-lg">Admin Actions</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-3">
-            {canDelete && (
+          <CardHeader><CardTitle className="text-lg">Workflow actions</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {transitions.length > 0 && <Input value={transitionNotes} onChange={(event) => setTransitionNotes(event.target.value)} placeholder="Optional approval or transition note" aria-label="Workflow action note" />}
+            <div className="flex flex-wrap gap-3">
+            {transitions.map((nextStatus) => (
+              <Button key={nextStatus} variant={nextStatus.includes('REJECTED') ? 'destructive' : 'default'} onClick={() => handleTransition(nextStatus)} disabled={Boolean(transitioning)}>
+                {transitioning === nextStatus && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{readable(nextStatus)}
+              </Button>
+            ))}
+            {canCancel && (
               <Button variant="destructive" onClick={handleDeleteOrder} disabled={deleting}>
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
-                Delete Order
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <XCircle className="h-4 w-4 mr-1" />}
+                Cancel order
               </Button>
             )}
-            {!canEditQuantity && !canDelete && (
-              <p className="text-sm text-muted-foreground">No admin actions available for this order.</p>
-            )}
+            </div>
+            {transitionError && <p className="text-sm text-destructive">{transitionError}</p>}
           </CardContent>
         </Card>
       )}

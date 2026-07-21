@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Bell,
   BookOpen,
   Boxes,
   ClipboardCheck,
@@ -17,13 +18,14 @@ import {
   ShieldCheck,
   ShoppingBasket,
   ShoppingCart,
-  Store,
+  Target,
   UserCircle,
   UserRoundCog,
   Users,
   Warehouse,
 } from "lucide-react";
 import { AppShell, type AppNavItem } from "@/components/app-shell";
+import { MobileAppShell } from "@/components/mobile-app-shell";
 
 interface RoleShellConfig {
   roleLabel: string;
@@ -52,6 +54,7 @@ const configs: Record<string, RoleShellConfig> = {
     { href: "/admin/catalog", label: "Catalog", icon: Boxes },
     { href: "/admin/inventory", label: "Inventory", icon: ClipboardCheck },
     { href: "/admin/orders", label: "Orders", icon: ReceiptText },
+    { href: "/admin/targets", label: "ASM Targets", icon: Target },
     { href: "/admin/reports/khata", label: "Khata Book", icon: BookOpen },
   ], [0, 1, 2, 3, 4]),
   manager: makeConfig("Store Manager", [
@@ -66,28 +69,32 @@ const configs: Record<string, RoleShellConfig> = {
   storefront: makeConfig("Distributor", [
     { href: "/storefront/dashboard", label: "Home", icon: House },
     { href: "/storefront/marketplace", label: "Market", icon: ShoppingCart },
-    { href: "/storefront/catalog", label: "Catalog", icon: Store },
     { href: "/storefront/cart", label: "Cart", icon: ShoppingBasket },
     { href: "/storefront/orders", label: "Orders", icon: ReceiptText },
     { href: "/storefront/reports/khata", label: "Khata", icon: BookOpen },
     { href: "/storefront/inventory", label: "Stock", icon: PackageSearch },
     { href: "/storefront/pos", label: "POS", icon: ScanBarcode },
     { href: "/storefront/profile", label: "Profile", icon: UserCircle },
-  ], [0, 1, 3, 4, 6]),
+    { href: "/storefront/notifications", label: "Alerts", icon: Bell },
+  ], [0, 1, 2, 3, 8]),
   asm: makeConfig("ASM Portal", [
-    { href: "/asm/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/asm/dashboard", label: "Home", icon: House },
     { href: "/asm/orders", label: "Orders", icon: ShoppingCart },
     { href: "/asm/distributors", label: "Distributors", icon: Users },
-    { href: "/asm/pos", label: "POS", icon: MapPin },
+    { href: "/asm/pos", label: "Place Order", icon: ShoppingBasket },
+    { href: "/asm/targets", label: "Targets", icon: Target },
     { href: "/asm/reports", label: "Reports", icon: BarChart3 },
-  ], [0, 1, 2, 3, 4]),
+    { href: "/asm/notifications", label: "Alerts", icon: Bell },
+  ], [0, 3, 2, 4, 6]),
   cf: makeConfig("C&F Portal", [
-    { href: "/cf/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/cf/dashboard", label: "Home", icon: House },
     { href: "/cf/orders", label: "Orders", icon: ShoppingCart },
+    { href: "/cf/place-order", label: "Place Order", icon: ShoppingBasket },
     { href: "/cf/asms", label: "ASMs", icon: Users },
     { href: "/cf/inventory", label: "Inventory", icon: Package },
     { href: "/cf/reports", label: "Reports", icon: BarChart3 },
-  ], [0, 1, 2, 3, 4]),
+    { href: "/cf/notifications", label: "Alerts", icon: Bell },
+  ], [0, 1, 2, 3, 6]),
 };
 
 function makeConfig(roleLabel: string, nav: AppNavItem[], bottomIndexes: number[]): RoleShellConfig {
@@ -105,7 +112,14 @@ function getPortal(pathname: string): keyof typeof configs {
 
 export function RoleShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const config = configs[getPortal(pathname)] ?? configs.storefront!;
+  const portal = getPortal(pathname);
+  const config = configs[portal] ?? configs.storefront!;
+
+  if (["storefront", "asm", "cf"].includes(portal)) {
+    return <MobileAppShell nav={config.nav} bottomNav={config.bottomNav} roleLabel={config.roleLabel} notificationsHref={`/${portal}/notifications`}>
+      {children}
+    </MobileAppShell>;
+  }
 
   return (
     <AppShell nav={config.nav} bottomNav={config.bottomNav} roleLabel={config.roleLabel}>

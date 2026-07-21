@@ -70,6 +70,7 @@ export type AuditAction =
   | "PRODUCT_UPDATED"
   | "INVENTORY_MOVEMENT"
   | "ORDER_CREATED"
+  | "ORDER_UPDATED"
   | "ORDER_STATUS_CHANGE"
   | "OTP_SENT"
   | "OTP_VERIFIED"

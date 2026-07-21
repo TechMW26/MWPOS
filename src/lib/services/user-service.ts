@@ -5,48 +5,69 @@
 import { adminDb } from "@/lib/db/admin";
 import { v4 as uuidv4 } from "uuid";
 import { writeAuditLog } from "./audit-service";
+import { normalizePhoneNumber } from "@/lib/auth/phone";
+import { getFirebaseAdminAuth } from "@/lib/firebase/admin-auth";
 import type { User, SessionData } from "@/types/models";
 import type { UserRole, ApprovalStatus } from "@/types";
 
-// ─── Find or Create User ─────────────────────────────────────
-
-export async function findOrCreateUser(input: {
-  channel: "email" | "phone";
-  destination: string;
-  displayName?: string | null;
-  role?: UserRole;
-}): Promise<User> {
-  const field = input.channel === "email" ? "email" : "phone";
-  const fieldValue = input.destination.toLowerCase().trim();
-
-  // Check if user already exists in RTDB
-  const snapshot = await adminDb
-    .ref("users")
-    .orderByChild(field)
-    .equalTo(fieldValue)
-    .once("value");
-
-  if (snapshot.exists()) {
-    const users = snapshot.val() as Record<string, User>;
-    const existingUser = Object.values(users)[0]!;
-    // Update last login
-    await adminDb.ref(`users/${existingUser.uid}/lastLoginAt`).set(new Date().toISOString());
-    return existingUser;
+export async function findUserByPhone(phoneInput: string): Promise<User | null> {
+  const phone = normalizePhoneNumber(phoneInput);
+  const exactSnap = await adminDb.ref("users").orderByChild("phone").equalTo(phone).once("value");
+  if (exactSnap.exists()) {
+    return Object.values(exactSnap.val() as Record<string, User>)[0] ?? null;
   }
 
-  // Create new user
-  const uid = uuidv4();
+  // One-time compatibility for phone values created before E.164 normalization.
+  const allUsersSnap = await adminDb.ref("users").once("value");
+  if (!allUsersSnap.exists()) return null;
+  return Object.values(allUsersSnap.val() as Record<string, User>).find((user) => {
+    if (!user.phone) return false;
+    try {
+      return normalizePhoneNumber(user.phone) === phone;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+// ─── Find or Create User By Verified Phone ───────────────────
+
+export async function findOrCreateUserByPhone(input: {
+  phone: string;
+  firebaseUid?: string;
+  displayName?: string | null;
+  role?: UserRole;
+  email?: string | null;
+}): Promise<User> {
+  const phone = normalizePhoneNumber(input.phone);
+
+  const existingUser = await findUserByPhone(phone);
+  if (existingUser) {
+    const lastLoginAt = new Date().toISOString();
+    const updates: Record<string, unknown> = { lastLoginAt, phone };
+    if (input.firebaseUid && existingUser.firebaseUid !== input.firebaseUid) {
+      updates.firebaseUid = input.firebaseUid;
+    }
+    if (input.email && !existingUser.email) {
+      updates.email = input.email.toLowerCase().trim();
+    }
+    await adminDb.ref(`users/${existingUser.uid}`).update(updates);
+    return { ...existingUser, ...updates } as User;
+  }
+
+  const uid = input.firebaseUid ?? uuidv4();
   const now = new Date().toISOString();
 
   const newUser: User = {
     uid,
-    email: input.channel === "email" ? fieldValue : null,
-    phone: input.channel === "phone" ? fieldValue : null,
-    displayName: input.displayName?.trim() || fieldValue,
+    firebaseUid: input.firebaseUid ?? null,
+    email: input.email?.toLowerCase().trim() ?? null,
+    phone,
+    displayName: input.displayName?.trim() || phone,
     role: input.role ?? "ASM",
     districtId: null,
     cfId: null,
-    approvalStatus: null, // only ASM needs approval
+    approvalStatus: (input.role ?? "ASM") === "ASM" ? "PENDING" : null,
     isActive: true,
     avatarUrl: null,
     createdAt: now,
@@ -77,29 +98,13 @@ export async function findOrCreateCustomerOwner(input: {
     return existing;
   }
 
-  const email = input.email?.toLowerCase().trim();
-  if (email) {
-    const user = await findOrCreateUser({
-      channel: "email",
-      destination: email,
-      displayName: input.displayName,
-      role: input.role ?? "DISTRIBUTOR",
-    });
-    if (input.role && user.role !== input.role) {
-      const updatedAt = new Date().toISOString();
-      await adminDb.ref(`users/${user.uid}`).update({ role: input.role, approvalStatus: null, updatedAt });
-      return { ...user, role: input.role, approvalStatus: null, updatedAt };
-    }
-    return user;
-  }
-
   const phone = input.phone?.trim();
   if (phone) {
-    const user = await findOrCreateUser({
-      channel: "phone",
-      destination: phone,
+    const user = await findOrCreateUserByPhone({
+      phone,
       displayName: input.displayName,
       role: input.role ?? "DISTRIBUTOR",
+      email: input.email,
     });
     if (input.role && user.role !== input.role) {
       const updatedAt = new Date().toISOString();
@@ -144,34 +149,45 @@ export async function buildSessionData(user: User): Promise<SessionData> {
 
 export async function createUser(input: {
   email: string | null;
-  phone: string | null;
+  phone: string;
   displayName: string;
   role: string;
   districtId?: string | null;
+  locations?: { state: string; district: string; ward: string; districtId: string }[];
   createdByRole?: string | null;
 }): Promise<User> {
-  const uid = uuidv4();
   const now = new Date().toISOString();
+  const phone = normalizePhoneNumber(input.phone);
 
-  // Check for existing user
-  if (input.email) {
-    const snap = await adminDb.ref("users").orderByChild("email").equalTo(input.email.toLowerCase().trim()).once("value");
-    if (snap.exists()) throw new Error("A user with this email already exists");
-  }
-  if (input.phone) {
-    const snap = await adminDb.ref("users").orderByChild("phone").equalTo(input.phone.trim()).once("value");
-    if (snap.exists()) throw new Error("A user with this phone already exists");
+  if (await findUserByPhone(phone)) throw new Error("A user with this phone already exists");
+
+  const firebaseAuth = getFirebaseAdminAuth();
+  let firebaseUid: string;
+  try {
+    firebaseUid = (await firebaseAuth.getUserByPhoneNumber(phone)).uid;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    if (code !== "auth/user-not-found") throw error;
+    firebaseUid = (await firebaseAuth.createUser({
+      phoneNumber: phone,
+      displayName: input.displayName.trim(),
+      disabled: false,
+    })).uid;
   }
 
   const newUser: User = {
-    uid,
+    uid: firebaseUid,
+    firebaseUid,
     email: input.email?.toLowerCase().trim() ?? null,
-    phone: input.phone?.trim() ?? null,
+    phone,
     displayName: input.displayName.trim(),
     role: input.role as UserRole,
     districtId: input.districtId ?? null,
+    locations: input.locations ?? undefined,
     cfId: null,
-    approvalStatus: input.role === "ASM" && input.createdByRole !== "ADMIN" && input.createdByRole !== "SUPERADMIN" ? "PENDING" : null,
+    approvalStatus: input.role === "ASM"
+      ? input.createdByRole === "ADMIN" || input.createdByRole === "SUPERADMIN" ? "APPROVED" : "PENDING"
+      : null,
     isActive: true,
     avatarUrl: null,
     createdAt: now,
@@ -179,7 +195,7 @@ export async function createUser(input: {
     lastLoginAt: null,
   };
 
-  await adminDb.ref(`users/${uid}`).set(newUser);
+  await adminDb.ref(`users/${firebaseUid}`).set(newUser);
   return newUser;
 }
 

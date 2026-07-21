@@ -5,18 +5,29 @@
 // ============================================================
 
 import { loadEnvConfig } from "@next/env";
-import { createHash, randomBytes } from "crypto";
 
 loadEnvConfig(process.cwd());
 
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const hash = createHash("sha256").update(salt + password).digest("hex");
-  return `${salt}:${hash}`;
-}
-
 async function seed() {
   const { adminDb } = await import("../src/lib/db/admin");
+  const { normalizePhoneNumber } = await import("../src/lib/auth/phone");
+  const { getFirebaseAdminAuth } = await import("../src/lib/firebase/admin-auth");
+
+  const configuredPhone = process.env.SEED_SUPERADMIN_PHONE;
+  if (!configuredPhone) throw new Error("SEED_SUPERADMIN_PHONE must be set before seeding");
+  const superadminPhone = normalizePhoneNumber(configuredPhone);
+  const firebaseAuth = getFirebaseAdminAuth();
+  let superadminUid: string;
+  try {
+    superadminUid = (await firebaseAuth.getUserByPhoneNumber(superadminPhone)).uid;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+    if (code !== "auth/user-not-found") throw error;
+    superadminUid = (await firebaseAuth.createUser({
+      phoneNumber: superadminPhone,
+      displayName: "MW-POS Superadmin",
+    })).uid;
+  }
 
   console.log("🌱 Seeding MW-POS database...\n");
 
@@ -39,21 +50,17 @@ async function seed() {
   console.log("✅ Existing data cleared");
 
   // ─── Users ───────────────────────────────────────────────
-  const superadminUid = "superadmin-001";
-
-  const superadminPassword = hashPassword("Admin@login2025");
-
   const users = {
     [superadminUid]: {
       uid: superadminUid,
-      email: "aviraj.sharma@mushroomworldgroup.com",
-      phone: null,
-      displayName: "Aviraj Sharma",
+      firebaseUid: superadminUid,
+      email: null,
+      phone: superadminPhone,
+      displayName: "MW-POS Superadmin",
       role: "SUPERADMIN",
       approvalStatus: null,
       isActive: true,
       avatarUrl: null,
-      hashedPassword: superadminPassword,
       createdAt: now,
       updatedAt: now,
       lastLoginAt: null,
@@ -78,8 +85,8 @@ async function seed() {
 
   console.log("🎉 Seed complete!\n");
   console.log("Superadmin login:");
-  console.log("  Email:    aviraj.sharma@mushroomworldgroup.com");
-  console.log("  Password: Admin@login2025");
+  console.log(`  Phone: ${superadminPhone}`);
+  console.log("  Authentication: Firebase SMS OTP");
 }
 
 seed().catch(console.error).finally(() => process.exit());

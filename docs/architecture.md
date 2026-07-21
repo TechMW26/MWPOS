@@ -44,14 +44,15 @@ MW-POS is a multi-tenant B2B distribution and POS platform. A central distributo
 
 ## Authentication Flow
 
-1. User enters email/phone → POST `/api/auth/request-otp`
-2. Server generates 6-digit OTP, stores hashed in RTDB `otpChallenges`
-3. OTP provider sends code (mock/email/vobiz)
-4. User enters code → POST `/api/auth/verify-otp`
-5. Server verifies hash, finds/creates user, mints Firebase custom token
-6. Client signs in with Firebase custom token
-7. Server creates HttpOnly session cookie with JWE
-8. All subsequent requests authenticated via session cookie
+1. User enters an E.164 phone number on `/login`
+2. For the configured superadmin phone only, the UI reveals a password field and `/api/auth/superadmin-password` validates the server-only secret and provisioned `SUPERADMIN` role
+3. For every other phone, Firebase's web SDK completes invisible reCAPTCHA and sends the SMS OTP
+4. The user confirms the code with Firebase Phone Auth
+5. The client sends the resulting Firebase ID token to `/api/auth/firebase-phone`
+6. Firebase Admin verifies the token and requires the `phone` sign-in provider
+7. The backend finds or creates the RTDB user by normalized phone number
+8. The backend creates the existing signed HttpOnly application session cookie
+9. All subsequent application requests use that role-scoped session
 
 ## Inventory Architecture
 

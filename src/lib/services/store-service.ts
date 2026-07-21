@@ -36,7 +36,7 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
   const owner = await findOrCreateCustomerOwner({
     ownerUid: input.ownerUid,
     email: input.ownerEmail,
-    phone: input.ownerPhone,
+    phone: input.ownerPhone ?? (input.type === "DISTRIBUTOR" ? input.phone : null),
     displayName: input.ownerName || input.name,
     role: input.type === "DISTRIBUTOR" ? "DISTRIBUTOR" : undefined,
   });

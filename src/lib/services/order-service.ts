@@ -5,11 +5,12 @@
 import { adminDb } from "@/lib/db/admin";
 import { v4 as uuidv4 } from "uuid";
 import { reserveInventory, releaseInventoryReservation, fulfillFromReserved, receiveInventory } from "./inventory-service";
-import { generateOtpCode, hashOtpCode } from "@/lib/auth/otp-utils";
-import { getOtpProvider } from "@/lib/auth/otp-provider";
-import type { KhataLedgerEntry, Order, OrderOtpRequest, OrderItem, OrderStatusChange, Distributor, User } from "@/types/models";
-import type { OrderPaymentMode, OrderPaymentProofType, OrderStatus, OtpVerificationStatus } from "@/types";
+import type { KhataLedgerEntry, Order, OrderItem, OrderStatusChange, Distributor, User } from "@/types/models";
+import type { OrderPaymentMode, OrderPaymentProofType, OrderStatus } from "@/types";
 import type { SessionData } from "@/types/models";
+import { writeAuditLog } from "./audit-service";
+import { sendOrderApprovalNotification } from "@/lib/notifications/order-notification";
+import { notifyOrderParticipants } from "@/lib/notifications/order-events";
 
 interface CreateOrderInput {
   distributorId: string;
@@ -29,8 +30,7 @@ interface CreateOrderInput {
 interface OrderResult {
   orderId: string;
   status: OrderStatus;
-  otpRequestId?: string;
-  otpCode?: string;
+  notificationDelivery?: { sent: boolean; devices: number };
 }
 
 // ─── Get product/SKU prices from server (never trust client) ─
@@ -98,11 +98,12 @@ async function getSkuPricingMap(skuIds: string[]): Promise<Map<string, SkuPricin
   return pricingBySkuId;
 }
 
-async function getDefaultCfId(): Promise<string | null> {
-  const snap = await adminDb.ref("users").orderByChild("role").equalTo("C_AND_F").once("value");
+async function getCfIdForDistributor(distributor: Distributor): Promise<string | null> {
+  if (!distributor.districtId) return null;
+  const snap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").once("value");
   if (!snap.exists()) return null;
   const users = Object.values(snap.val() as Record<string, User>);
-  return users.find((user) => user.isActive)?.uid ?? null;
+  return users.find((user) => user.isActive && user.approvalStatus === "APPROVED" && user.districtId === distributor.districtId && user.cfId)?.cfId ?? null;
 }
 
 // ─── Create Order (ASM places for a Distributor) ─────────────
@@ -125,24 +126,30 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   if (session.role === "DISTRIBUTOR" && !session.distributorIds.includes(input.distributorId) && !session.storeIds.includes(input.distributorId)) {
     throw new Error("Distributor is not linked to your account");
   }
+  if (session.role === "C_AND_F") {
+    const asmsSnap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").get();
+    const asms = Object.values((asmsSnap.val() as Record<string, User> | null) || {});
+    const allowedDistricts = new Set(asms.filter((asm) => asm.cfId === session.uid && asm.isActive).map((asm) => asm.districtId).filter(Boolean));
+    if (!distributor.districtId || !allowedDistricts.has(distributor.districtId)) throw new Error("Distributor is not assigned to your C&F account");
+  }
 
   const placedByDistributor = session.role === "DISTRIBUTOR";
+  const placedByCf = session.role === "C_AND_F";
 
   // Get C&F assignment
   let cfId: string | null = null;
   if (session.role === "ASM" && session.cfId) {
     cfId = session.cfId;
+  } else if (placedByCf) {
+    cfId = session.uid;
   } else if (placedByDistributor) {
-    cfId = session.cfId ?? await getDefaultCfId();
+    cfId = session.cfId ?? await getCfIdForDistributor(distributor);
+    if (!cfId) throw new Error("No C&F is assigned to this distributor's district");
   }
 
   const orderId = uuidv4();
   const now = new Date().toISOString();
   const initialStatusHistoryId = uuidv4();
-
-  const otpCode = placedByDistributor ? null : generateOtpCode();
-  const otpRequestId = placedByDistributor ? null : uuidv4();
-  const otpExpiresAt = placedByDistributor ? null : new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
   // Build order items with server-verified pricing
   const orderItems: Record<string, OrderItem> = {};
@@ -180,14 +187,14 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   const paymentMode = input.paymentMode ?? "PAY_LATER";
   const paymentProvider = paymentMode === "PAY_LATER" ? "KHATA" : input.paymentProofType === "CHEQUE" ? "CHEQUE" : input.paymentProofType === "ONLINE" ? "ONLINE" : "RAZORPAY";
   const khataEntryId = paymentMode === "PAY_LATER" ? uuidv4() : null;
-  const initialStatus: OrderStatus = placedByDistributor ? "PENDING_CF_APPROVAL" : "PENDING_OTP";
+  const initialStatus: OrderStatus = placedByDistributor || placedByCf ? "PENDING_CF_APPROVAL" : "PENDING_OTP";
 
   const initialStatusChange: OrderStatusChange = {
     from: null,
     to: initialStatus,
     changedBy: session.uid,
     changedAt: now,
-    notes: placedByDistributor ? "Order created by distributor — awaiting C&F approval" : "Order created by ASM — awaiting distributor OTP verification",
+    notes: placedByCf ? "Direct order created by C&F" : placedByDistributor ? "Order created by distributor — awaiting C&F approval" : "Order created by ASM — awaiting distributor OTP verification",
   };
 
   const order: Order = {
@@ -196,11 +203,11 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     sourceStoreId: input.sourceStoreId,
     asmId: input.asmId,
     placedByUid: session.uid,
-    otpStatus: placedByDistributor ? "VERIFIED" : "PENDING",
-    otpRequestId,
-    otpExpiresAt,
-    otpChannel: placedByDistributor ? null : distributor.email ? "email" : distributor.phone ? "whatsapp" : null,
-    otpDestination: placedByDistributor ? null : distributor.email || distributor.phone || null,
+    otpStatus: placedByDistributor || placedByCf ? "VERIFIED" : "PENDING",
+    otpRequestId: null,
+    otpExpiresAt: null,
+    otpChannel: null,
+    otpDestination: null,
     cfId,
     cfApprovalStatus: cfId || placedByDistributor ? "PENDING" : "NOT_REQUIRED",
     paymentMode,
@@ -237,33 +244,12 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     [`idempotencyKeys/order/${input.idempotencyKey}`]: { orderId, createdAt: now },
   };
 
-  let otpRequest: OrderOtpRequest | null = null;
-  if (!placedByDistributor && otpRequestId && otpCode && otpExpiresAt) {
-    otpRequest = {
-      id: otpRequestId,
-      orderId,
-      distributorId: input.distributorId,
-      distributorPhone: distributor.phone || null,
-      distributorEmail: distributor.email || null,
-      requestedByUid: session.uid,
-      channels: [],
-      hashedOtp: hashOtpCode(otpCode),
-      status: "PENDING",
-      attempts: 0,
-      maxAttempts: 5,
-      expiresAt: otpExpiresAt,
-      createdAt: now,
-      verifiedAt: null,
-    };
-    updates[`orderOtpRequests/${otpRequestId}`] = otpRequest;
-  }
-
   // Add each item
   for (const [itemId, item] of Object.entries(orderItems)) {
     updates[`orders/${orderId}/items/${itemId}`] = item;
   }
 
-  if (paymentMode === "PAY_LATER" && khataEntryId) {
+  if ((placedByDistributor || placedByCf) && paymentMode === "PAY_LATER" && khataEntryId) {
     const balanceSnap = await adminDb.ref(`khataBalances/${input.distributorId}/balancePaise`).get();
     const currentBalance = balanceSnap.exists() ? finiteNumber(balanceSnap.val(), 0) ?? 0 : 0;
     const balanceAfter = currentBalance + totalPaise;
@@ -288,29 +274,22 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
 
   await adminDb.ref().update(updates);
 
-  // Send OTP to distributor via email for ASM-created orders
-  if (otpRequest && otpCode && distributor.email) {
-    try {
-      const { sendNotificationEmail } = await import("@/lib/mail/mailer");
-      await sendNotificationEmail({
-        to: distributor.email,
-        subject: `Order OTP - ${orderId.slice(0, 8)}`,
-        title: "Order Verification OTP",
-        message: `An order of ${formatAmount(totalPaise)} has been placed for ${distributor.name}. Your OTP is: ${otpCode}. This OTP is valid for 24 hours.`,
-      });
-      otpRequest.channels.push("email");
-    } catch (e) { console.error('[Order] OTP email failed:', e); }
-  }
+  await writeAuditLog({
+    actorId: session.uid,
+    action: "ORDER_CREATED",
+    entityType: "ORDER",
+    entityId: orderId,
+    after: { status: initialStatus, distributorId: input.distributorId, asmId: input.asmId, totalPaise },
+  }).catch((error) => console.error("[Order] Failed to write creation audit log:", error));
 
-  // Send OTP via WhatsApp (if phone available — placeholder)
-  if (otpRequest && distributor.phone) {
-    otpRequest.channels.push("whatsapp");
-    // TODO: Integrate WhatsApp Business API for OTP delivery
-  }
-
-  // Update channels in OTP request
-  if (otpRequestId && otpRequest) {
-    await adminDb.ref(`orderOtpRequests/${otpRequestId}/channels`).set(otpRequest.channels);
+  let notificationDelivery: OrderResult["notificationDelivery"];
+  if (!placedByDistributor && !placedByCf) {
+    notificationDelivery = await sendOrderApprovalNotification({
+      orderId,
+      distributor,
+      items: Object.values(orderItems),
+      totalPaise,
+    });
   }
 
   // Notify C&F if assigned
@@ -331,7 +310,7 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     } catch (e) { console.error('[Order] CF notification failed:', e); }
   }
 
-  return { orderId, status: initialStatus, otpRequestId: otpRequestId ?? undefined, otpCode: otpCode ?? undefined };
+  return { orderId, status: initialStatus, notificationDelivery };
 }
 
 function formatAmount(paise: number): string {
@@ -351,7 +330,7 @@ export async function approveOrder(orderId: string, session: SessionData, notes?
   if (!orderSnap.exists()) throw new Error("Order not found");
   const order = orderSnap.val() as Order;
 
-  if (order.status !== "CF_APPROVED" && order.status !== "OTP_VERIFIED") {
+  if (!["PENDING_CF_APPROVAL", "OTP_VERIFIED"].includes(order.status)) {
     throw new Error(`Cannot approve order in status: ${order.status}`);
   }
 
@@ -410,6 +389,9 @@ export async function transitionOrder(
     [`ordersByDistributor/${order.distributorId}/${orderId}/status`]: toStatus,
   };
 
+  if (toStatus === "CF_APPROVED") updates[`orders/${orderId}/cfApprovalStatus`] = "APPROVED";
+  if (toStatus === "CF_REJECTED") updates[`orders/${orderId}/cfApprovalStatus`] = "REJECTED";
+
   // Remove from old status index, add to new
   updates[`ordersByStatus/${fromStatus}/${orderId}`] = null;
   updates[`ordersByStatus/${toStatus}/${orderId}`] = {
@@ -419,6 +401,18 @@ export async function transitionOrder(
   };
 
   await adminDb.ref().update(updates);
+
+  await writeAuditLog({
+    actorId: session.uid,
+    action: "ORDER_STATUS_CHANGE",
+    entityType: "ORDER",
+    entityId: orderId,
+    before: { status: fromStatus },
+    after: { status: toStatus, notes: notes ?? null },
+  }).catch((error) => console.error("[Order] Failed to write transition audit log:", error));
+
+  await notifyOrderParticipants({ ...order, status: toStatus }, toStatus, session.uid)
+    .catch((error) => console.error("[Order] Failed to notify participants:", error));
 
   return { orderId, status: toStatus };
 }

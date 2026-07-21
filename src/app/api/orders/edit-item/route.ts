@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { adminDb } from "@/lib/db/admin";
 import type { Order, OrderItem } from "@/types/models";
+import { writeAuditLog } from "@/lib/services/audit-service";
+import { v4 as uuidv4 } from "uuid";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -30,6 +32,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Order not found" }, { status: 404 });
     }
     const order = orderSnap.val() as Order;
+
+    if (session.role === "C_AND_F" && order.cfId !== session.uid) {
+      return NextResponse.json({ message: "This order is not assigned to your C&F account" }, { status: 403 });
+    }
 
     // Cannot edit delivered/cancelled/rejected orders
     if (["DELIVERED", "CANCELLED", "REJECTED", "CF_REJECTED"].includes(order.status)) {
@@ -82,6 +88,7 @@ export async function POST(request: Request) {
 
     const newTotal = newSubtotal + newTax;
     const now = new Date().toISOString();
+    const editHistoryId = uuidv4();
 
     const updates: Record<string, unknown> = {
       [`orders/${orderId}/items/${itemKey}`]: updatedItem,
@@ -89,7 +96,7 @@ export async function POST(request: Request) {
       [`orders/${orderId}/taxPaise`]: newTax,
       [`orders/${orderId}/totalPaise`]: newTotal,
       [`orders/${orderId}/updatedAt`]: now,
-      [`orders/${orderId}/editHistory/${now}`]: {
+      [`orders/${orderId}/editHistory/${editHistoryId}`]: {
         editedBy: session.uid,
         editedByRole: session.role,
         skuId,
@@ -103,6 +110,14 @@ export async function POST(request: Request) {
     };
 
     await adminDb.ref().update(updates);
+    await writeAuditLog({
+      actorId: session.uid,
+      action: "ORDER_UPDATED",
+      entityType: "ORDER",
+      entityId: orderId,
+      before: { skuId, quantity: oldQuantity, totalPaise: order.totalPaise },
+      after: { skuId, quantity: newQuantity, totalPaise: newTotal, reason },
+    }).catch((auditError) => console.error("[EditItem] Audit log failed:", auditError));
 
     return NextResponse.json({ success: true, newTotal, item: updatedItem });
   } catch (error) {

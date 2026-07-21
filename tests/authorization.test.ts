@@ -73,8 +73,8 @@ describe("Authorization", () => {
       expect(() => requireDistributorAccess(superadmin, "any-dist")).not.toThrow();
     });
 
-    it("C&F can access any", () => {
-      expect(() => requireDistributorAccess(cf, "any-dist")).not.toThrow();
+    it("denies unscoped C&F distributor access", () => {
+      expect(() => requireDistributorAccess(cf, "any-dist")).toThrow(AuthorizationError);
     });
 
     it("ASM denied to non-owned distributor", () => {

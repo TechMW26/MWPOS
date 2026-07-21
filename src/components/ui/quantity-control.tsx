@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/input";
 interface QuantityControlProps {
   value: number;
   onChange: (value: number) => void;
+  quickQuantities?: number[];
+  compact?: boolean;
 }
 
-const BULK_QUANTITIES = [100, 500, 1000];
-
-export function QuantityControl({ value, onChange }: QuantityControlProps) {
+export function QuantityControl({ value, onChange, quickQuantities = [], compact = false }: QuantityControlProps) {
   function setQuantity(next: number) {
     onChange(Number.isFinite(next) ? Math.max(0, Math.floor(next)) : 0);
   }
@@ -25,7 +25,7 @@ export function QuantityControl({ value, onChange }: QuantityControlProps) {
         type="number"
         min="0"
         inputMode="numeric"
-        className="h-8 w-20 text-center"
+        className={`h-8 text-center ${compact ? "w-14" : "w-20"}`}
         value={value}
         onChange={(event) => setQuantity(Number(event.target.value))}
         aria-label="Quantity"
@@ -33,13 +33,13 @@ export function QuantityControl({ value, onChange }: QuantityControlProps) {
       <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setQuantity(value + 1)} aria-label="Increase quantity">
         <Plus className="h-3 w-3" />
       </Button>
-      <div className="flex gap-1">
-        {BULK_QUANTITIES.map((quantity) => (
+      {quickQuantities.length > 0 && <div className="flex gap-1">
+        {quickQuantities.map((quantity) => (
           <Button key={quantity} type="button" size="sm" variant="outline" className="h-8 px-2 text-xs" onClick={() => setQuantity(quantity)}>
             {quantity}
           </Button>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

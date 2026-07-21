@@ -24,6 +24,13 @@ export async function GET(request: Request) {
   if (session.role === "DISTRIBUTOR") {
     const ids = session.distributorIds.length ? session.distributorIds : session.storeIds;
     distributors = distributors.filter((d) => ids.includes(d.id));
+  } else if (session.role === "C_AND_F") {
+    const usersSnap = await adminDb.ref("users").get();
+    const users = (usersSnap.val() as Record<string, { role: string; cfId?: string | null; districtId?: string | null }> | null) || {};
+    const districtIds = new Set(Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid).map((user) => user.districtId).filter((id): id is string => Boolean(id)));
+    const ordersSnap = await adminDb.ref("orders").orderByChild("cfId").equalTo(session.uid).get();
+    const orderDistributorIds = new Set(Object.values((ordersSnap.val() as Record<string, { distributorId: string }> | null) || {}).map((order) => order.distributorId));
+    distributors = distributors.filter((distributor) => districtIds.has(distributor.districtId) || orderDistributorIds.has(distributor.id));
   }
 
   return NextResponse.json(distributors);

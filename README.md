@@ -6,7 +6,7 @@ A production-grade, multi-tenant B2B distribution and POS system built with Next
 
 - **Framework:** Next.js 15 (App Router) with TypeScript strict mode
 - **Database:** Firebase Realtime Database (denormalized, query-optimized)
-- **Authentication:** Email/Phone OTP → Firebase Custom Token → HttpOnly Session Cookie
+- **Authentication:** Firebase Phone OTP for users; configured superadmin phone/password → HttpOnly application session
 - **UI:** Tailwind CSS, shadcn/ui, Lucide icons
 - **Validation:** Zod, React Hook Form
 - **Testing:** Vitest, Firebase Emulator Suite
@@ -17,8 +17,9 @@ A production-grade, multi-tenant B2B distribution and POS system built with Next
 |------|-------------|
 | SUPERADMIN | Full system access, manages admins, settings, approvals |
 | ADMIN | Global operations, creates stores, manages catalog/inventory/orders |
-| STORE_MANAGER | Assigned-store access, can create customer stores when approved |
-| CUSTOMER | Customer store user — orders stock, manages inventory, POS |
+| ASM | District-scoped distributor and order management |
+| C_AND_F | Assigned ASM, approval, fulfillment, and inventory operations |
+| DISTRIBUTOR | Own-business ordering, inventory, POS, and khata access |
 
 ## Quick Start
 
@@ -38,10 +39,13 @@ npm install
 cp .env.example .env.local
 # Edit .env.local with your Firebase credentials
 
-# 3. Start Firebase emulators (optional, for local dev)
+# 3. Enable Firebase Authentication > Phone in the Firebase Console
+# Add localhost and your deployed domain under Authorized domains
+
+# 4. Start Firebase emulators (optional, for local dev)
 npx firebase emulators:start --project demo-mxpos
 
-# 4. Run the dev server
+# 5. Run the dev server
 npm run dev
 ```
 
@@ -49,11 +53,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Environment Variables
 
-See `.env.example` for all required variables. Key ones:
-
-- `OTP_PROVIDER=mock` — Use mock OTP for development (codes are logged to console)
-- `OTP_PROVIDER=email` — Send real emails via SMTP
-- `OTP_PROVIDER=vobiz` — Vobiz adapter (requires VOBIZ_API_KEY/VOBIZ_API_URL)
+See `.env.example` for all required variables. Firebase web configuration powers SMS verification and Firebase Admin credentials verify ID tokens on the backend.
 
 ### Seeding Demo Data
 
@@ -61,20 +61,23 @@ See `.env.example` for all required variables. Key ones:
 npm run seed
 ```
 
-This creates:
-- 4 users (superadmin, admin, manager, customer)
-- 2 stores (1 distribution, 1 customer)
-- 4 products with SKUs
-- Inventory balances
-- Store catalog and memberships
+Set `SEED_SUPERADMIN_PHONE`, `NEXT_PUBLIC_SUPERADMIN_PHONE`, and the server-only `SUPERADMIN_PASSWORD` in `.env.local` first. The seed clears existing application data, then creates or reuses that Firebase Phone Auth identity and stores it as the initial superadmin.
 
-### Mock OTP Mode
+### Firebase Phone OTP
 
-When `OTP_PROVIDER=mock`, OTP codes are printed to the server console. Use any 6-digit code to log in with the seeded emails.
+Enable the **Phone** sign-in provider in Firebase Authentication. The browser uses Firebase's invisible reCAPTCHA and SMS verification; the backend accepts only Firebase ID tokens whose sign-in provider is `phone`.
 
-### Email OTP
+The configured superadmin phone is the only exception: entering it reveals the password field and uses the server-only superadmin password endpoint. Other phone numbers never receive a password option.
 
-Set `OTP_PROVIDER=email` and configure SMTP:
+For development without sending real SMS messages, configure Firebase Authentication test phone numbers in the Firebase Console. Do not disable app verification in production.
+
+### Order approval OTPs
+
+ASM-created orders use Firebase end to end. Firebase Cloud Messaging notifies the distributor with the order items, quantities, and total. From the order review page, the linked distributor requests a Firebase Phone Auth SMS and enters that code to approve the order. The backend accepts only a fresh Firebase phone ID token belonging to the same distributor session and registered phone number. Firebase Authentication does not support custom order text inside its verification SMS, so the complete summary remains visible in the push notification and approval screen.
+
+### Email Notifications
+
+SMTP remains optional for transactional order notifications:
 
 ```
 SMTP_HOST=smtp.example.com
@@ -84,27 +87,19 @@ SMTP_PASS=your-pass
 SMTP_FROM=noreply@mxpos.app
 ```
 
-### Vobiz OTP
-
-The Vobiz adapter is disabled by default. When you have a confirmed generic OTP API contract:
-
-1. Set `OTP_PROVIDER=vobiz`
-2. Set `VOBIZ_API_KEY` and `VOBIZ_API_URL`
-3. Update the `VobizOtpProvider` implementation in `src/lib/auth/otp-provider.ts`
-
 ## Project Structure
 
 ```
 src/
 ├── app/
-│   ├── (auth)/          # Login, OTP verify pages
+│   ├── (auth)/          # Firebase phone login
 │   ├── (superadmin)/    # Superadmin dashboard & pages
 │   ├── (admin)/         # Admin dashboard & pages
 │   ├── (manager)/       # Store manager dashboard & pages
 │   ├── (storefront)/    # Customer storefront & POS
 │   └── api/auth/        # Auth API routes
 ├── lib/
-│   ├── auth/            # OTP providers, session, authorization
+│   ├── auth/            # Phone normalization, session, authorization
 │   ├── db/              # Firebase admin & client init
 │   ├── services/        # Business logic (inventory, orders, POS, etc.)
 │   ├── validation/      # Zod schemas

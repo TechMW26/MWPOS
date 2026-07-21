@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
-import { DollarSign, TrendingUp, TrendingDown, FileText, Printer, Send, Mail } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, FileText, Printer, Send } from 'lucide-react';
 
 interface KhataBookProps {
   role: 'SUPERADMIN' | 'ADMIN' | 'ASM' | 'C_AND_F' | 'DISTRIBUTOR' | 'STORE_MANAGER';
@@ -126,19 +126,6 @@ export function KhataBook({ role, managerDistributors }: KhataBookProps) {
     window.open(whatsappUrl(phone, text), '_blank');
   }
 
-  async function sendEmailReceipt(order: any) {
-    const dist = distributors.find(d => d.id === order.distributorId);
-    const email = dist?.email;
-    if (!email) { alert('No email for this distributor'); return; }
-    try {
-      await fetch('/api/auth/request-otp', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel: 'email', destination: email }),
-      });
-      alert('Receipt sent to ' + email);
-    } catch { alert('Failed to send email'); }
-  }
-
   if (loading) return <div className="p-6 text-muted-foreground">Loading khata book...</div>;
 
   return (
@@ -213,7 +200,6 @@ export function KhataBook({ role, managerDistributors }: KhataBookProps) {
               <div className="flex gap-1">
                 <Button size="sm" variant="ghost" className="h-7 px-1.5" title="Print Invoice" onClick={() => printInvoice(o)}><Printer className="h-3 w-3" /></Button>
                 <Button size="sm" variant="ghost" className="h-7 px-1.5 text-green-600" title="Send WhatsApp" onClick={() => sendWhatsApp(o)}><Send className="h-3 w-3" /></Button>
-                <Button size="sm" variant="ghost" className="h-7 px-1.5" title="Email Receipt" onClick={() => sendEmailReceipt(o)}><Mail className="h-3 w-3" /></Button>
               </div>
             )},
           ]} emptyMessage="No entries for selected filters" />

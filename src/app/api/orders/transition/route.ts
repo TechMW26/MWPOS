@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth/session";
 import { canTransitionOrder } from "@/lib/auth/authorization";
 import { transitionOrderSchema } from "@/lib/validation/schemas";
 import { approveOrder, transitionOrder, cancelOrder, rejectOrder, fulfillOrder, deliverOrder } from "@/lib/services/order-service";
+import { getOrder } from "@/lib/services/order-service";
 
 export async function POST(request: Request) {
   const session = await getSession();
@@ -13,6 +14,11 @@ export async function POST(request: Request) {
     const parsed = transitionOrderSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ message: "Invalid data" }, { status: 400 });
     const { orderId, toStatus, notes } = parsed.data;
+    const order = await getOrder(orderId);
+    if (!order) return NextResponse.json({ message: "Order not found" }, { status: 404 });
+    if (session.role === "C_AND_F" && order.cfId !== session.uid) {
+      return NextResponse.json({ message: "This order is not assigned to your C&F account" }, { status: 403 });
+    }
     let result;
     switch (toStatus) {
       case "CF_APPROVED": result = await approveOrder(orderId, session, notes); break;

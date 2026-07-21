@@ -7,23 +7,32 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
-import { Check, X, UserPlus, Loader2, ExternalLink } from 'lucide-react';
-import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { Check, X, UserPlus, Loader2, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import Link from 'next/link';
-import { INDIAN_STATES, getAreasForCity, getDistrictsForState } from '@/lib/indian-districts';
-import type { District } from '@/types/models';
+import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
+import type { District, ASMLocation } from '@/types/models';
+
+interface LocationRow {
+  key: number; // React key
+  state: string;
+  district: string;
+  ward: string;
+  districtId: string;
+}
 
 export default function AsmPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [addEmail, setAddEmail] = useState('');
   const [addPhone, setAddPhone] = useState('');
   const [addName, setAddName] = useState('');
-  const [addState, setAddState] = useState('');
-  const [addCity, setAddCity] = useState('');
-  const [addDistrictId, setAddDistrictId] = useState('');
+  const [locations, setLocations] = useState<LocationRow[]>([
+    { key: 0, state: '', district: '', ward: '', districtId: '' },
+  ]);
+  const [locationCounter, setLocationCounter] = useState(1);
   const [districts, setDistricts] = useState<District[]>([]);
-  const [cityAreas, setCityAreas] = useState<string[]>([]);
-  const [areasLoading, setAreasLoading] = useState(false);
+  const [areaCache, setAreaCache] = useState<Record<string, string[]>>({});
+  const [areasLoading, setAreasLoading] = useState<Record<string, boolean>>({});
   const [adding, setAdding] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
   const { data: liveManagers, loading, error, live } = useRealtimeList({
@@ -33,31 +42,60 @@ export default function AsmPage() {
     equalValue: 'ASM',
   });
   const managers = liveManagers;
-  const citiesForState = useMemo(() => {
-    const cities = districts
-      .filter(d => d.state === addState && d.city)
-      .map(d => d.city);
-    return Array.from(new Set([...cities, ...getDistrictsForState(addState)])).sort();
-  }, [addState, districts]);
-  const districtsForCity = useMemo(() => {
+
+  function getDistrictsForLocation(state: string): string[] {
+    return getDistrictsForState(state);
+  }
+
+  function getDistrictOptionsForLocation(state: string, district: string): { id: string; name: string }[] {
     const configured = districts
-      .filter(d => d.state === addState && d.city === addCity)
-      .map(d => ({ id: d.id, name: d.name, city: d.city, state: d.state }));
-    const areas = Array.from(new Set([...getAreasForCity(addState, addCity), ...cityAreas]));
-    const areaOptions = areas.map(area => ({
-      id: `${addState}|${addCity}|${area}`,
-      name: area,
-      city: addCity,
-      state: addState,
-    }));
-    const fallback = getDistrictsForState(addState).includes(addCity)
-      ? [{ id: `${addState}|${addCity}`, name: addCity, city: addCity, state: addState }]
-      : [];
+      .filter(d => d.state === state && d.city === district)
+      .map(d => ({ id: d.id, name: d.name }));
     if (configured.length > 0) return configured;
-    if (areaOptions.length > 0) return areaOptions;
-    return fallback;
-  }, [addCity, addState, cityAreas, districts]);
-  const districtById = useMemo(() => new Map(districts.map(d => [d.id, d])), [districts]);
+    return getDistrictsForState(state).filter(d => d === district).map(d => ({
+      id: `${state}|${district}`,
+      name: district,
+    }));
+  }
+
+  function getWardOptionsForLocation(state: string, district: string): { id: string; name: string }[] {
+    const cacheKey = `${state}||${district}`;
+    const areas = areaCache[cacheKey] || [];
+    return areas.map(w => ({
+      id: `${state}|${district}|${w}`,
+      name: w,
+    }));
+  }
+
+  function updateLocation(key: number, patch: Partial<LocationRow>) {
+    setLocations(prev => prev.map(l => l.key === key ? { ...l, ...patch } : l));
+  }
+
+  function addLocation() {
+    setLocations(prev => [...prev, { key: locationCounter, state: '', district: '', ward: '', districtId: '' }]);
+    setLocationCounter(c => c + 1);
+  }
+
+  function removeLocation(key: number) {
+    setLocations(prev => prev.length > 1 ? prev.filter(l => l.key !== key) : prev);
+  }
+
+  function fetchAreasForLocation(state: string, district: string) {
+    const cacheKey = `${state}||${district}`;
+    if (areaCache[cacheKey] || !state || !district) return;
+    setAreasLoading(prev => ({ ...prev, [cacheKey]: true }));
+    const controller = new AbortController();
+    fetch(`/api/geo/areas?state=${encodeURIComponent(state)}&city=${encodeURIComponent(district)}`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() : [])
+      .then((data: string[]) => setAreaCache(prev => ({ ...prev, [cacheKey]: Array.isArray(data) ? data : [] })))
+      .catch(() => {})
+      .finally(() => setAreasLoading(prev => ({ ...prev, [cacheKey]: false })));
+  }
+
+  // Fetch areas when any location's state+district changes
+  useEffect(() => {
+    locations.forEach(loc => fetchAreasForLocation(loc.state, loc.district));
+  }, [locations.map(l => `${l.state}|${l.district}`).join(',')]);
 
   useEffect(() => {
     fetch('/api/districts')
@@ -66,35 +104,28 @@ export default function AsmPage() {
       .catch(() => setDistricts([]));
   }, []);
 
-  useEffect(() => {
-    if (!addState || !addCity) {
-      setCityAreas([]);
-      return;
-    }
-    const controller = new AbortController();
-    setAreasLoading(true);
-    fetch(`/api/geo/areas?state=${encodeURIComponent(addState)}&city=${encodeURIComponent(addCity)}`, { signal: controller.signal })
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setCityAreas(Array.isArray(data) ? data : []))
-      .catch(() => setCityAreas([]))
-      .finally(() => setAreasLoading(false));
-    return () => controller.abort();
-  }, [addCity, addState]);
-
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!addEmail && !addPhone) { setActionMsg('Email or phone required'); return; }
-    if (!addState || !addCity || !addDistrictId) { setActionMsg('State, city and district required'); return; }
+    if (!addPhone) { setActionMsg('Phone number required'); return; }
+    const incomplete = locations.find(l => !l.state || !l.district || !l.ward);
+    if (incomplete) { setActionMsg('All locations must have State, District and Ward'); return; }
     setAdding(true); setActionMsg('');
     try {
+      const asmLocations: ASMLocation[] = locations.map(l => ({
+        state: l.state,
+        district: l.district,
+        ward: l.ward,
+        districtId: `${l.state}|${l.district}|${l.ward}`,
+      }));
       const res = await fetch('/api/users', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: addEmail || null,
-          phone: addPhone || null,
-          displayName: addName || addEmail || addPhone,
+          phone: addPhone,
+          displayName: addName || addPhone,
           role: 'ASM',
-          districtId: addDistrictId,
+          districtId: asmLocations.length > 0 ? asmLocations[0]!.districtId : '',
+          locations: asmLocations,
         }),
       });
       if (!res.ok) {
@@ -102,7 +133,10 @@ export default function AsmPage() {
         throw new Error(data.message || 'Failed');
       }
       setActionMsg('ASM created');
-      setShowAdd(false); setAddEmail(''); setAddPhone(''); setAddName(''); setAddState(''); setAddCity(''); setAddDistrictId('');
+      setShowAdd(false); setAddEmail(''); setAddPhone(''); setAddName('');
+      setLocations([{ key: locationCounter, state: '', district: '', ward: '', districtId: '' }]);
+      setLocationCounter(c => c + 1);
+      setAreaCache({});
     } catch (e: any) { setActionMsg('Error: ' + (e.message || 'Failed')); }
     finally { setAdding(false); }
   }
@@ -120,6 +154,7 @@ export default function AsmPage() {
 
   const pending = managers.filter(m => m.approvalStatus === 'PENDING');
   const approved = managers.filter(m => m.approvalStatus === 'APPROVED');
+  const districtById = useMemo(() => new Map(districts.map(d => [d.id, d])), [districts]);
 
   return (
     <div className="space-y-6">
@@ -143,44 +178,72 @@ export default function AsmPage() {
                     onChange={e => setAddName(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Email Address</label>
+                  <label className="text-sm font-medium block mb-1">Email Address (optional)</label>
                   <Input type="email" placeholder="manager@example.com" value={addEmail}
                     onChange={e => setAddEmail(e.target.value)} />
                 </div>
                 <div>
-                  <label className="text-sm font-medium block mb-1">Phone (optional)</label>
-                  <Input type="tel" placeholder="+91..." value={addPhone}
+                  <label className="text-sm font-medium block mb-1">Phone Number</label>
+                  <Input type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" value={addPhone}
                     onChange={e => setAddPhone(e.target.value)} />
                 </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="text-sm font-medium block mb-1">State</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={addState}
-                    onChange={e => { setAddState(e.target.value); setAddCity(''); setAddDistrictId(''); }} required>
-                    <option value="">Select State *</option>
-                    {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold">Territory Locations ({locations.length})</p>
+                  <Button type="button" variant="outline" size="sm" onClick={addLocation}>
+                    <Plus className="h-3.5 w-3.5 mr-1" /> Add Location
+                  </Button>
                 </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">City</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={addCity}
-                    onChange={e => { setAddCity(e.target.value); setAddDistrictId(''); }} required disabled={!addState}>
-                    <option value="">{addState ? 'Select City *' : 'Select state first'}</option>
-                    {citiesForState.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">District</label>
-                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={addDistrictId}
-                    onChange={e => setAddDistrictId(e.target.value)} required disabled={!addCity}>
-                    <option value="">{areasLoading ? 'Loading areas...' : 'Select District *'}</option>
-                    {districtsForCity.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </div>
+                {locations.map((loc, idx) => (
+                  <div key={loc.key} className="rounded-md border bg-muted/20 p-3 mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-muted-foreground">Location {idx + 1}</span>
+                      {locations.length > 1 && (
+                        <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive" onClick={() => removeLocation(loc.key)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-medium block mb-1">State</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          value={loc.state}
+                          onChange={e => updateLocation(loc.key, { state: e.target.value, district: '', ward: '', districtId: '' })}
+                          required>
+                          <option value="">Select State *</option>
+                          {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium block mb-1">District</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          value={loc.district}
+                          onChange={e => updateLocation(loc.key, { district: e.target.value, ward: '', districtId: '' })}
+                          required disabled={!loc.state}>
+                          <option value="">{loc.state ? 'Select District *' : 'Select state'}</option>
+                          {getDistrictsForLocation(loc.state).map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium block mb-1">Ward</label>
+                        <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          value={loc.ward}
+                          onChange={e => updateLocation(loc.key, { ward: e.target.value, districtId: `${loc.state}|${loc.district}|${e.target.value}` })}
+                          required disabled={!loc.district}>
+                          <option value="">{areasLoading[`${loc.state}||${loc.district}`] ? 'Loading...' : loc.district ? 'Select Ward *' : 'Select district'}</option>
+                          {getWardOptionsForLocation(loc.state, loc.district).map(w => <option key={w.id} value={w.name}>{w.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+
               <p className="text-xs text-muted-foreground">New ASM will be active immediately when created by an admin.</p>
-              <Button className="w-full sm:w-auto" type="submit" disabled={adding || (!addEmail && !addPhone) || !addDistrictId}>
+              <Button className="w-full sm:w-auto" type="submit" disabled={adding || !addPhone || locations.some(l => !l.state || !l.district || !l.ward)}>
                 {adding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {adding ? 'Creating...' : 'Create ASM'}
               </Button>
@@ -205,7 +268,7 @@ export default function AsmPage() {
               </CardTitle></CardHeader>
               <CardContent>
                 <DataTable data={pending} columns={[
-                  { key: 'email', header: 'Email' },
+                  { key: 'phone', header: 'Phone' },
                   { key: 'createdAt', header: 'Applied', render: (m) => new Date(m.createdAt).toLocaleDateString() },
                   { key: 'actions', header: 'Actions', render: (m) => (
                     <div className="grid gap-2 sm:flex">
@@ -227,7 +290,7 @@ export default function AsmPage() {
                     {m.displayName || m.email || m.phone} <ExternalLink className="h-3 w-3" />
                   </Link>
                 )},
-                { key: 'email', header: 'Email/Phone', render: (m) => m.email || m.phone || '—' },
+                { key: 'phone', header: 'Phone', render: (m) => m.phone || '—' },
                 { key: 'districtId', header: 'District', render: (m) => {
                   const district = districtById.get(m.districtId);
                   return district ? `${district.name} (${district.city})` : m.districtId || '—';

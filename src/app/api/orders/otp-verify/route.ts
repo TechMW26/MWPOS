@@ -1,93 +1,116 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
-import { adminDb } from "@/lib/db/admin";
-import { verifyOrderOtpSchema } from "@/lib/validation/schemas";
-import { hashOtpCode } from "@/lib/auth/otp-utils";
 import { v4 as uuidv4 } from "uuid";
-import type { Order, OrderOtpRequest } from "@/types/models";
+import { getSession } from "@/lib/auth/session";
+import { normalizePhoneNumber } from "@/lib/auth/phone";
+import { adminDb } from "@/lib/db/admin";
+import { getFirebaseAdminAuth } from "@/lib/firebase/admin-auth";
+import { writeAuditLog } from "@/lib/services/audit-service";
+import { verifyOrderOtpSchema } from "@/lib/validation/schemas";
+import type { KhataLedgerEntry, Order, Distributor } from "@/types/models";
+
+const MAX_AUTH_AGE_SECONDS = 5 * 60;
+
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return `••••${digits.slice(-4)}`;
+}
 
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await request.json();
-    const parsed = verifyOrderOtpSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ message: "Invalid data", errors: parsed.error.flatten() }, { status: 400 });
-    }
+    const parsed = verifyOrderOtpSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ message: "Invalid verification request" }, { status: 400 });
 
-    const { orderId, otpCode } = parsed.data;
-    const now = new Date().toISOString();
-
-    // Get the order
-    const orderSnap = await adminDb.ref(`orders/${orderId}`).get();
-    if (!orderSnap.exists()) {
-      return NextResponse.json({ message: "Order not found" }, { status: 404 });
-    }
+    const orderSnap = await adminDb.ref(`orders/${parsed.data.orderId}`).get();
+    if (!orderSnap.exists()) return NextResponse.json({ message: "Order not found" }, { status: 404 });
     const order = orderSnap.val() as Order;
-
-    if (order.otpStatus !== "PENDING") {
-      return NextResponse.json({ message: "No pending OTP verification for this order" }, { status: 400 });
+    const distributorIds = session.distributorIds.length ? session.distributorIds : session.storeIds;
+    if (session.role !== "DISTRIBUTOR" || !distributorIds.includes(order.distributorId)) {
+      return NextResponse.json({ message: "Only the linked distributor can approve this order" }, { status: 403 });
+    }
+    if (order.status !== "PENDING_OTP" || order.otpStatus === "VERIFIED") {
+      return NextResponse.json({ message: "This order is not waiting for OTP approval" }, { status: 400 });
     }
 
-    if (!order.otpRequestId) {
-      return NextResponse.json({ message: "No OTP request found" }, { status: 400 });
+    const distributorSnap = await adminDb.ref(`stores/${order.distributorId}`).get();
+    if (!distributorSnap.exists()) return NextResponse.json({ message: "Distributor not found" }, { status: 404 });
+    const distributor = distributorSnap.val() as Distributor;
+    if (!distributor.phone) return NextResponse.json({ message: "Distributor phone number is not configured" }, { status: 400 });
+
+    const decoded = await getFirebaseAdminAuth().verifyIdToken(parsed.data.firebaseIdToken, true);
+    if (decoded.firebase.sign_in_provider !== "phone" || !decoded.phone_number) {
+      return NextResponse.json({ message: "Firebase phone verification is required" }, { status: 403 });
+    }
+    if (decoded.uid !== session.uid) {
+      return NextResponse.json({ message: "The verified Firebase account does not match this session" }, { status: 403 });
+    }
+    if (Math.floor(Date.now() / 1000) - decoded.auth_time > MAX_AUTH_AGE_SECONDS) {
+      return NextResponse.json({ message: "Verification expired. Request a new Firebase OTP." }, { status: 401 });
+    }
+    if (normalizePhoneNumber(decoded.phone_number) !== normalizePhoneNumber(distributor.phone)) {
+      return NextResponse.json({ message: "The verified phone does not match this distributor" }, { status: 403 });
     }
 
-    // Get the OTP request
-    const otpSnap = await adminDb.ref(`orderOtpRequests/${order.otpRequestId}`).get();
-    if (!otpSnap.exists()) {
-      return NextResponse.json({ message: "OTP request not found" }, { status: 404 });
-    }
-    const otpRequest = otpSnap.val() as OrderOtpRequest;
-
-    // Check expiry
-    if (new Date(otpRequest.expiresAt) < new Date()) {
-      await adminDb.ref(`orderOtpRequests/${order.otpRequestId}`).update({ status: "EXPIRED" });
-      await adminDb.ref(`orders/${orderId}`).update({ otpStatus: "EXPIRED", status: "DRAFT", updatedAt: now });
-      return NextResponse.json({ message: "OTP has expired. Please request a new OTP." }, { status: 410 });
-    }
-
-    // Check attempts
-    if (otpRequest.attempts >= otpRequest.maxAttempts) {
-      await adminDb.ref(`orderOtpRequests/${order.otpRequestId}`).update({ status: "FAILED" });
-      await adminDb.ref(`orders/${orderId}`).update({ otpStatus: "FAILED", status: "DRAFT", updatedAt: now });
-      return NextResponse.json({ message: "Max OTP attempts exceeded" }, { status: 429 });
-    }
-
-    // Verify OTP
-    const hashedInput = await hashOtpCode(otpCode);
-    const isValid = hashedInput === otpRequest.hashedOtp;
-
-    if (!isValid) {
-      await adminDb.ref(`orderOtpRequests/${order.otpRequestId}`).update({
-        attempts: otpRequest.attempts + 1,
-      });
-      return NextResponse.json({ message: "Invalid OTP code" }, { status: 400 });
-    }
-
-    // OTP verified — update order and OTP request
+    const now = new Date().toISOString();
+    const nextStatus = order.cfId ? "PENDING_CF_APPROVAL" : "OTP_VERIFIED";
     const statusHistoryId = uuidv4();
     const updates: Record<string, unknown> = {
-      [`orderOtpRequests/${order.otpRequestId}/status`]: "VERIFIED",
-      [`orderOtpRequests/${order.otpRequestId}/verifiedAt`]: now,
-      [`orders/${orderId}/otpStatus`]: "VERIFIED",
-      [`orders/${orderId}/status`]: order.cfId ? "PENDING_CF_APPROVAL" : "OTP_VERIFIED",
-      [`orders/${orderId}/updatedAt`]: now,
-      [`orders/${orderId}/statusHistory/${statusHistoryId}`]: {
+      [`orders/${order.id}/otpStatus`]: "VERIFIED",
+      [`orders/${order.id}/otpChannel`]: "firebase_sms",
+      [`orders/${order.id}/otpDestination`]: maskPhone(decoded.phone_number),
+      [`orders/${order.id}/otpExpiresAt`]: null,
+      [`orders/${order.id}/status`]: nextStatus,
+      [`orders/${order.id}/updatedAt`]: now,
+      [`orders/${order.id}/statusHistory/${statusHistoryId}`]: {
         from: order.status,
-        to: order.cfId ? "PENDING_CF_APPROVAL" : "OTP_VERIFIED",
+        to: nextStatus,
         changedBy: session.uid,
         changedAt: now,
-        notes: "OTP verified by distributor",
+        notes: "Approved by distributor using Firebase Phone Auth OTP",
       },
+      [`ordersByDistributor/${order.distributorId}/${order.id}/status`]: nextStatus,
+      [`ordersByStatus/${order.status}/${order.id}`]: null,
+      [`ordersByStatus/${nextStatus}/${order.id}`]: { orderId: order.id, distributorId: order.distributorId, createdAt: now },
     };
 
-    await adminDb.ref().update(updates);
+    if (order.paymentMode === "PAY_LATER" && order.khataEntryId) {
+      const ledgerPath = `khataLedger/${order.distributorId}/${order.khataEntryId}`;
+      const existingLedger = await adminDb.ref(ledgerPath).get();
+      if (!existingLedger.exists()) {
+        const balanceSnap = await adminDb.ref(`khataBalances/${order.distributorId}/balancePaise`).get();
+        const currentBalance = Number(balanceSnap.val()) || 0;
+        const balanceAfter = currentBalance + order.totalPaise;
+        const khataEntry: KhataLedgerEntry = {
+          id: order.khataEntryId,
+          storeId: order.distributorId,
+          orderId: order.id,
+          type: "DEBIT",
+          amountPaise: order.totalPaise,
+          balanceAfterPaise: balanceAfter,
+          notes: order.notes || "ASM order approved with Firebase OTP",
+          createdBy: session.uid,
+          createdAt: now,
+        };
+        updates[ledgerPath] = khataEntry;
+        updates[`khataBalances/${order.distributorId}`] = { storeId: order.distributorId, balancePaise: balanceAfter, updatedAt: now };
+      }
+    }
 
-    return NextResponse.json({ success: true, status: order.cfId ? "PENDING_CF_APPROVAL" : "OTP_VERIFIED" });
+    await adminDb.ref().update(updates);
+    await writeAuditLog({
+      actorId: session.uid,
+      action: "OTP_VERIFIED",
+      entityType: "ORDER",
+      entityId: order.id,
+      before: { otpStatus: order.otpStatus, status: order.status },
+      after: { otpStatus: "VERIFIED", status: nextStatus, provider: "FIREBASE_PHONE_AUTH" },
+    }).catch((auditError) => console.error("[Order OTP] Audit log failed:", auditError));
+
+    return NextResponse.json({ success: true, status: nextStatus });
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Failed" }, { status: 500 });
+    console.error("[Order OTP] Firebase verification failed:", error instanceof Error ? error.message : error);
+    return NextResponse.json({ message: "Firebase OTP verification failed" }, { status: 401 });
   }
 }
