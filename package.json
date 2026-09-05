@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "import:party-report": "tsx scripts/import-party-report.ts",
+    "map:distributor-districts": "tsx scripts/map-distributor-districts.ts",
     "seed": "tsx scripts/seed.ts",
     "emulators": "firebase emulators:start --project demo-mxpos"
   },

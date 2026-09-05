@@ -5,7 +5,7 @@
 import { adminDb } from "@/lib/db/admin";
 import { v4 as uuidv4 } from "uuid";
 import { reserveInventory, releaseInventoryReservation, fulfillFromReserved, receiveInventory } from "./inventory-service";
-import type { KhataLedgerEntry, Order, OrderItem, OrderStatusChange, Distributor, User } from "@/types/models";
+import type { KhataLedgerEntry, Order, OrderItem, OrderStatusChange, Distributor, Store, User } from "@/types/models";
 import type { OrderPaymentMode, OrderPaymentProofType, OrderStatus } from "@/types";
 import type { SessionData } from "@/types/models";
 import { writeAuditLog } from "./audit-service";
@@ -16,7 +16,7 @@ import { validateOrderTransition } from "@/lib/orders/workflow";
 
 interface CreateOrderInput {
   distributorId: string;
-  sourceStoreId: string; // distribution store (C&F's warehouse)
+  sourceStoreId: string | null; // distribution store when inventory tracking is configured
   asmId: string;
   assignedCfId?: string | null;
   items: Array<{ skuId: string; productId: string; quantity: number }>;
@@ -116,6 +116,29 @@ async function getCfIdForDistributor(distributor: Distributor): Promise<string |
   return matchingCfIds[0] ?? null;
 }
 
+async function resolveOrderSourceStore(order: Order): Promise<string | null> {
+  if (order.sourceStoreId) {
+    const current = await adminDb.ref(`stores/${order.sourceStoreId}`).get();
+    if (current.exists()) {
+      const store = current.val();
+      if (store.isActive && store.approvalStatus === "APPROVED" && store.type === "DISTRIBUTION") {
+        return order.sourceStoreId;
+      }
+    }
+  }
+
+  const storesSnapshot = await adminDb.ref("stores").orderByChild("type").equalTo("DISTRIBUTION").once("value");
+  const stores = Object.values((storesSnapshot.val() as Record<string, Store> | null) ?? {})
+    .filter((store) => store.isActive && store.approvalStatus === "APPROVED");
+  const matched = order.cfId
+    ? stores.find((store) => store.ownerUid === order.cfId || store.managerUid === order.cfId)
+    : stores.length === 1 ? stores[0] : null;
+  if (!matched) return null;
+
+  await adminDb.ref(`orders/${order.id}`).update({ sourceStoreId: matched.id, updatedAt: new Date().toISOString() });
+  return matched.id;
+}
+
 // ─── Create Order (ASM places for a Distributor) ─────────────
 
 export async function createOrder(input: CreateOrderInput, session: SessionData): Promise<OrderResult> {
@@ -158,13 +181,11 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   // Get C&F assignment
   let cfId: string | null = input.assignedCfId ?? null;
   if (session.role === "ASM") {
-    cfId = session.cfId;
-    if (!cfId) throw new Error("No C&F is assigned to your ASM account");
+    cfId = session.cfId ?? cfId;
   } else if (placedByCf) {
     cfId = session.uid;
   } else if (placedByDistributor) {
     cfId = session.cfId ?? cfId ?? await getCfIdForDistributor(distributor);
-    if (!cfId) throw new Error("No C&F is assigned to this distributor's district");
   }
 
   const orderId = uuidv4();
@@ -352,14 +373,18 @@ export async function approveOrder(orderId: string, session: SessionData, notes?
     throw new Error("Distributor Firebase OTP approval is required before C&F approval");
   }
 
-  // Reserve inventory for each item
+  // Link the warehouse as late as approval so warehouse setup never blocks
+  // distributors or ASMs from submitting a valid order.
+  const sourceStoreId = await resolveOrderSourceStore(order);
+
+  // Reserve inventory when a tracked source warehouse is configured.
   const itemsSnap = await adminDb.ref(`orders/${orderId}/items`).get();
   const items = itemsSnap.val() as Record<string, OrderItem> | null;
 
-  if (items) {
+  if (items && sourceStoreId) {
     for (const item of Object.values(items)) {
       await reserveInventory({
-        storeId: order.sourceStoreId,
+        storeId: sourceStoreId,
         skuId: item.skuId,
         orderId,
         quantity: item.quantity,
@@ -369,7 +394,10 @@ export async function approveOrder(orderId: string, session: SessionData, notes?
     }
   }
 
-  return transitionOrder(orderId, "CF_APPROVED", session, notes);
+  const approvalNotes = sourceStoreId
+    ? notes
+    : [notes, "Inventory reservation skipped because no distribution warehouse is configured"].filter(Boolean).join(" · ");
+  return transitionOrder(orderId, "CF_APPROVED", session, approvalNotes);
 }
 
 // ─── Transition Order ────────────────────────────────────────
@@ -442,7 +470,7 @@ export async function cancelOrder(orderId: string, session: SessionData, notes?:
   const order = orderSnap.val() as Order;
 
   // Release reservations if order was approved/allocated
-  if (["CF_APPROVED", "APPROVED", "ALLOCATED", "PICKING", "PACKED"].includes(order.status)) {
+  if (order.sourceStoreId && ["CF_APPROVED", "APPROVED", "ALLOCATED", "PICKING", "PACKED"].includes(order.status)) {
     const itemsSnap = await adminDb.ref(`orders/${orderId}/items`).get();
     const items = itemsSnap.val() as Record<string, OrderItem> | null;
 
@@ -473,7 +501,7 @@ export async function rejectOrder(orderId: string, session: SessionData, notes?:
   const order = orderSnap.val() as Order;
 
   // Release reservations if any
-  if (["CF_APPROVED", "APPROVED", "ALLOCATED", "PICKING", "PACKED"].includes(order.status)) {
+  if (order.sourceStoreId && ["CF_APPROVED", "APPROVED", "ALLOCATED", "PICKING", "PACKED"].includes(order.status)) {
     const itemsSnap = await adminDb.ref(`orders/${orderId}/items`).get();
     const items = itemsSnap.val() as Record<string, OrderItem> | null;
     if (items) {
@@ -514,7 +542,7 @@ export async function fulfillOrder(
   const itemsSnap = await adminDb.ref(`orders/${orderId}/items`).get();
   const items = itemsSnap.val() as Record<string, OrderItem> | null;
 
-  if (items) {
+  if (items && order.sourceStoreId) {
     for (const item of Object.values(items)) {
       await fulfillFromReserved({
         storeId: order.sourceStoreId,

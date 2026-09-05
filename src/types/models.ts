@@ -234,7 +234,7 @@ export interface CartItem {
 export interface Order {
   id: string;
   distributorId: string; // destination distributor
-  sourceStoreId: string; // distribution store (C&F's warehouse)
+  sourceStoreId: string | null; // distribution warehouse; null when inventory tracking is not configured
   asmId: string; // ASM who placed the order
   placedByUid: string;
   otpStatus: OtpVerificationStatus;

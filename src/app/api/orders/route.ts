@@ -115,9 +115,6 @@ export async function POST(request: Request) {
     const stores = sourceStoreSnap.val();
     const distributionStores = stores ? Object.values(stores) as Store[] : [];
     let assignedCfId = session.role === "C_AND_F" ? session.uid : session.cfId;
-    if (session.role === "ASM" && !assignedCfId) {
-      return NextResponse.json({ message: "No C&F is assigned to your ASM account" }, { status: 400 });
-    }
     if (!assignedCfId && distributorSnap.exists()) {
       const distributor = distributorSnap.val() as Store;
       const asmsSnap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").get();
@@ -135,14 +132,10 @@ export async function POST(request: Request) {
     const sourceStore = assignedCfId
       ? activeDistributionStores.find((store) => store.ownerUid === assignedCfId || store.managerUid === assignedCfId)
       : activeDistributionStores[0];
-    if (!sourceStore) {
-      return NextResponse.json({
-        message: assignedCfId
-          ? "The assigned C&F does not have an active approved distribution warehouse"
-          : "No active approved distribution warehouse is configured",
-      }, { status: 400 });
-    }
-    const sourceStoreId = sourceStore.id;
+    // Warehouse setup controls inventory tracking, not whether a valid user can
+    // submit an order. Orders without a configured warehouse remain actionable
+    // and can be linked to one automatically when they are approved later.
+    const sourceStoreId = sourceStore?.id ?? null;
 
     let order = await createOrder({
       ...parsed.data,

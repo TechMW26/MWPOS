@@ -40,16 +40,15 @@ export function districtMatchesTerritory(assignedId: string | null | undefined, 
   if (!assignedId || !resourceId) return false;
   if (assignedId === resourceId) return true;
 
-  const assigned = assignedId.split("|").map((part) => part.trim());
-  const resource = resourceId.split("|").map((part) => part.trim());
-  if (assigned.length < 3 || resource.length < 3) return false;
+  const normalize = (part: string) => part.trim().toLocaleLowerCase("en-IN");
+  const assigned = assignedId.split("|").map(normalize).filter(Boolean);
+  const resource = resourceId.split("|").map(normalize).filter(Boolean);
+  if (assigned.length < 2 || resource.length < 2) return false;
 
-  const assignedCity = assigned.length >= 4 ? assigned[2] : null;
-  const resourceCity = resource.length >= 4 ? resource[2] : null;
-  return assigned[0] === resource[0]
-    && assigned[1] === resource[1]
-    && assigned.at(-1) === resource.at(-1)
-    && (!assignedCity || !resourceCity || assignedCity === resourceCity);
+  // Distributor ownership is district-wide. City/ward segments remain useful
+  // display metadata but must not hide a distributor from an ASM assigned to
+  // the same state and district.
+  return assigned[0] === resource[0] && assigned[1] === resource[1];
 }
 
 export function requireDistributorAccess(session: SessionData, distributorId: string): void {
@@ -71,7 +70,7 @@ export function canManageRoles(session: SessionData): boolean {
 }
 
 export function canCreateOrder(session: SessionData): boolean {
-  return session.role === "SUPERADMIN" || session.role === "ADMIN" || session.role === "ASM";
+  return ["SUPERADMIN", "ADMIN", "ASM", "C_AND_F", "DISTRIBUTOR"].includes(session.role);
 }
 
 export function canTransitionOrder(session: SessionData): boolean {

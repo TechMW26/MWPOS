@@ -41,11 +41,18 @@ export async function createDistrict(input: CreateDistrictInput, session: Sessio
   return district;
 }
 
-export async function listDistricts(): Promise<District[]> {
+export async function listDistricts(includeInactive = false): Promise<District[]> {
   const snap = await adminDb.ref("districts").once("value");
   const val = snap.val() as Record<string, District> | null;
   if (!val) return [];
-  return Object.values(val).filter((d) => d.isActive);
+  return Object.values(val)
+    .filter((district) => includeInactive || district.isActive)
+    .sort((left, right) => {
+      const stateOrder = left.state.localeCompare(right.state);
+      if (stateOrder !== 0) return stateOrder;
+      const cityOrder = left.city.localeCompare(right.city);
+      return cityOrder !== 0 ? cityOrder : left.name.localeCompare(right.name);
+    });
 }
 
 export async function getDistrict(id: string): Promise<District | null> {

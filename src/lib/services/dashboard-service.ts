@@ -163,7 +163,7 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
   orders.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   const visibleDistributorIds = new Set(filters.distributorId ? [filters.distributorId] : distributors.map((store) => store.id));
-  const sourceStoreIds = new Set(scopedOrders.map((order) => order.sourceStoreId));
+  const sourceStoreIds = new Set(scopedOrders.map((order) => order.sourceStoreId).filter((storeId): storeId is string => Boolean(storeId)));
   const inventoryStoreIds = session.role === "SUPERADMIN" || session.role === "ADMIN"
     ? new Set(stores.map((store) => store.id))
     : new Set([...visibleDistributorIds, ...sourceStoreIds]);

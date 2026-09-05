@@ -121,6 +121,14 @@ export const createDistrictSchema = z.object({
   state: z.string().min(1).max(100),
 });
 
+export const updateDistrictSchema = createDistrictSchema.partial().extend({
+  id: z.string().min(1),
+  isActive: z.boolean().optional(),
+}).refine(
+  ({ id: _id, ...updates }) => Object.keys(updates).length > 0,
+  { message: "At least one district field is required" }
+);
+
 export const createDistributorSchema = z.object({
   name: z.string().min(2).max(200),
   districtId: z.string().min(1),

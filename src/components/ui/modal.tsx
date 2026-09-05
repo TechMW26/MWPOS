@@ -111,7 +111,7 @@ export function Modal({ open, title, onClose, children, className }: ModalProps)
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex min-h-dvh items-end justify-center overflow-hidden overscroll-none"
+      className="fixed inset-0 z-[200] flex min-h-dvh items-center justify-center overflow-hidden overscroll-none p-3 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -128,14 +128,13 @@ export function Modal({ open, title, onClose, children, className }: ModalProps)
       <div
         ref={panelRef}
         className={cn(
-          "relative flex max-h-[92dvh] w-full max-w-4xl transform-gpu flex-col overflow-hidden overscroll-contain rounded-t-[2rem] border-x border-t bg-card shadow-[0_-24px_60px_rgba(15,23,42,0.24)] will-change-transform",
+          "relative flex max-h-[calc(100dvh-1.5rem)] w-full max-w-4xl transform-gpu flex-col overflow-hidden overscroll-contain rounded-[1.75rem] border bg-card shadow-2xl will-change-transform sm:max-h-[calc(100dvh-3rem)]",
           "transition-[transform,opacity] duration-300 ease-[cubic-bezier(.22,.85,.3,1)] motion-reduce:transition-none",
-          entered ? "translate-y-0 opacity-100" : "translate-y-full opacity-0",
+          entered ? "translate-y-0 scale-100 opacity-100" : "translate-y-5 scale-[0.97] opacity-0",
           className
         )}
       >
-        <div className="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-slate-300" aria-hidden="true" />
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-5 py-4">
           <h2 id={titleId} className="text-xl font-bold tracking-tight">{title}</h2>
           <Button type="button" variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-slate-100" onClick={() => onCloseRef.current()} aria-label="Close">
             <XIcon className="h-5 w-5" weight="bold" />
