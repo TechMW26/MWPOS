@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BellSimpleIcon, CaretRightIcon, ListIcon, SignOutIcon, XIcon } from "@phosphor-icons/react";
 import type { AppNavItem } from "@/components/app-shell";
 import { cn } from "@/lib/cn";
+import { getJson, invalidateJson } from "@/lib/client/api-cache";
 
 interface MobileAppShellProps {
   children: React.ReactNode;
@@ -28,14 +29,17 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
 
   useEffect(() => {
     let active = true;
-    const load = () => fetch("/api/notifications?limit=1", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
+    const load = (force = false) => getJson<any>("/api/notifications?limit=1", { ttlMs: 15_000, force })
       .then((payload) => { if (active) setUnread(Number(payload?.unreadCount) || 0); })
       .catch(() => undefined);
     load();
-    const timer = window.setInterval(load, 30_000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [pathname]);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load(true);
+    }, 30_000);
+    const refreshWhenVisible = () => document.visibilityState === "visible" && load(true);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshWhenVisible); };
+  }, []);
 
   async function signOut() {
     try {
@@ -45,6 +49,7 @@ export function MobileAppShell({ children, nav, bottomNav, roleLabel, notificati
       await firebaseSignOut(getFirebaseAuth());
     } catch { /* session logout below is authoritative */ }
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    invalidateJson();
     router.push("/login");
   }
 

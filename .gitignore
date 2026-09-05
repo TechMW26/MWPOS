@@ -54,3 +54,8 @@ next-env.d.ts
 tmp/
 temp/
 .vercel
+
+# Android local machine/build state
+android/local.properties
+android/.gradle/
+.env*

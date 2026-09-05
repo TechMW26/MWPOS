@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const optionalText = z.preprocess((value) => value === "" ? null : value, z.string().nullable().optional());
 const optionalEmail = z.preprocess((value) => value === "" ? null : value, z.string().email().nullable().optional());
+const optionalHttpUrl = z.preprocess(
+  (value) => value === "" ? null : value,
+  z.string().url().refine((value) => value.startsWith("https://") || value.startsWith("http://"), "A valid HTTP(S) URL is required").nullable().optional()
+);
+const idempotencyKey = z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/, "Invalid idempotency key");
 
 // ─── Store Schemas ───────────────────────────────────────────
 
@@ -38,6 +43,7 @@ export const createSkuSchema = z.object({
   sku: z.string().min(1).max(50),
   barcode: z.string().max(100).nullable().optional(),
   unit: z.string().min(1).max(20),
+  piecesPerBox: z.number().int().min(1).max(10_000).default(1),
   mrp: z.number().int().positive("MRP must be positive"),
   sellingPrice: z.number().int().positive("Selling price must be positive"),
   costPrice: z.number().int().positive("Cost price must be positive"),
@@ -73,7 +79,7 @@ export const createOrderSchema = z.object({
   distributorId: z.string().min(1).optional(),
   paymentMode: z.enum(["UPFRONT", "PAY_LATER"]).default("PAY_LATER"),
   paymentProofType: z.enum(["ONLINE", "CHEQUE"]).nullable().optional(),
-  paymentProofUrl: optionalText,
+  paymentProofUrl: optionalHttpUrl,
   paymentProofFileName: optionalText,
   paymentProofMimeType: optionalText,
   paymentReference: optionalText,
@@ -82,12 +88,26 @@ export const createOrderSchema = z.object({
       z.object({
         skuId: z.string().min(1),
         productId: z.string().min(1),
-        quantity: z.number().int().positive(),
+        quantity: z.number().int().min(1).max(100_000),
       })
     )
-    .min(1),
+    .min(1)
+    .max(100)
+    .superRefine((items, context) => {
+      const seen = new Set<string>();
+      items.forEach((item, index) => {
+        if (seen.has(item.skuId)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Each SKU can appear only once in an order",
+            path: [index, "skuId"],
+          });
+        }
+        seen.add(item.skuId);
+      });
+    }),
   notes: z.string().max(500).nullable().optional(),
-  idempotencyKey: z.string().min(1),
+  idempotencyKey,
 });
 
 export const verifyOrderOtpSchema = z.object({
@@ -122,7 +142,6 @@ export const transitionOrderSchema = z.object({
   orderId: z.string().min(1),
   toStatus: z.enum([
     "PENDING_OTP",
-    "OTP_VERIFIED",
     "CF_APPROVED",
     "ALLOCATED",
     "PICKING",

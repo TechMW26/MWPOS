@@ -10,6 +10,7 @@ import { Plus, Search, Package, Loader2, ExternalLink, Trash2 } from 'lucide-rea
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function CatalogPage() {
   const [search, setSearch] = useState('');
@@ -35,7 +36,9 @@ export default function CatalogPage() {
   async function handleDelete() {
     if (!deleteProductId) return;
     await fetch('/api/products?id=' + deleteProductId, { method: 'DELETE' });
-    // Refresh will happen via realtime subscription
+    invalidateJson('/api/products');
+    invalidateJson('/api/marketplace');
+    invalidateJson('/api/dashboard');
   }
 
   if (loading) return (
@@ -92,7 +95,7 @@ export default function CatalogPage() {
                   <CardContent className="border-t pt-4">
                     {product.description && <p className="text-sm text-muted-foreground mb-4">{product.description}</p>}
                     {productSkus.length === 0 ? <p className="text-sm text-muted-foreground">No SKUs defined.</p> : (
-                      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground uppercase"><th className="py-2 px-3">SKU</th><th className="py-2 px-3">Barcode</th><th className="py-2 px-3">Unit</th><th className="py-2 px-3">Cost</th><th className="py-2 px-3">Sell Price</th><th className="py-2 px-3">MRP</th><th className="py-2 px-3">Tax</th></tr></thead><tbody>{productSkus.map((sku: any) => (<tr key={sku.id} className="border-b last:border-0 hover:bg-muted/30"><td className="py-2 px-3 font-mono font-medium">{sku.sku}</td><td className="py-2 px-3 font-mono text-xs text-muted-foreground">{sku.barcode || '—'}</td><td className="py-2 px-3">{sku.unit}</td><td className="py-2 px-3">{formatCurrency(sku.costPrice)}</td><td className="py-2 px-3 font-medium">{formatCurrency(sku.sellingPrice)}</td><td className="py-2 px-3 text-muted-foreground">{formatCurrency(sku.mrp)}</td><td className="py-2 px-3">{sku.taxType} {sku.taxRate}%</td></tr>))}</tbody></table></div>
+                      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground uppercase"><th className="py-2 px-3">SKU</th><th className="py-2 px-3">Barcode</th><th className="py-2 px-3">Unit</th><th className="py-2 px-3">Pack</th><th className="py-2 px-3">Cost</th><th className="py-2 px-3">Sell Price</th><th className="py-2 px-3">MRP</th><th className="py-2 px-3">Tax</th></tr></thead><tbody>{productSkus.map((sku: any) => (<tr key={sku.id} className="border-b last:border-0 hover:bg-muted/30"><td className="py-2 px-3 font-mono font-medium">{sku.sku}</td><td className="py-2 px-3 font-mono text-xs text-muted-foreground">{sku.barcode || '—'}</td><td className="py-2 px-3">{sku.unit}</td><td className="py-2 px-3 whitespace-nowrap">{Math.max(1, Number(sku.piecesPerBox) || 1)} pcs / box</td><td className="py-2 px-3">{formatCurrency(sku.costPrice)}</td><td className="py-2 px-3 font-medium">{formatCurrency(sku.sellingPrice)}</td><td className="py-2 px-3 text-muted-foreground">{formatCurrency(sku.mrp)}</td><td className="py-2 px-3">{sku.taxType} {sku.taxRate}%</td></tr>))}</tbody></table></div>
                     )}
                   </CardContent>
                 )}

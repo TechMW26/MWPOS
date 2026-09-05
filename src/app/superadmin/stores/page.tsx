@@ -10,6 +10,7 @@ import { ConfirmDialog } from '@/components/ui/modal';
 import { Plus, Check, X, Trash2, Edit3 } from 'lucide-react';
 import { PhoneInput } from '@/components/ui/phone-input';
 import { INDIAN_STATES, getDistrictsForState } from '@/lib/indian-districts';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function DistributorsPage() {
   const [distributors, setDistributors] = useState<any[]>([]);
@@ -61,6 +62,9 @@ export default function DistributorsPage() {
           : '';
         throw new Error(fieldErrors || data?.message || 'Failed to create distributor');
       }
+      invalidateJson('/api/stores');
+      invalidateJson('/api/marketplace');
+      invalidateJson('/api/dashboard');
       setShowForm(false);
       setForm({ name:'', state:'', district:'', city:'', ward:'', address:'', pincode:'', phone:'', phoneCode:'+91', gstin:'', ownerName:'', ownerPhone:'', ownerPhoneCode:'+91' });
       await load();
@@ -73,12 +77,14 @@ export default function DistributorsPage() {
 
   async function handleApproval(id: string, approvalStatus: 'APPROVED' | 'REJECTED') {
     await fetch('/api/stores', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ storeId: id, approvalStatus }) });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     load();
   }
 
   async function handleDelete() {
     if (!deleteDistributorId) return;
     await fetch('/api/stores?storeId=' + deleteDistributorId, { method:'DELETE' });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     load();
   }
 
@@ -94,6 +100,7 @@ export default function DistributorsPage() {
         isActive: editing.isActive,
       }),
     });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     setEditing(null); load();
   }
 

@@ -73,13 +73,6 @@ export function getClientIp(request: Request): string {
 }
 
 /**
- * Generate a random 6-digit OTP code.
- */
-export function generateOtp(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-/**
  * Safe JSON parse.
  */
 export function safeJsonParse<T>(str: string): T | null {

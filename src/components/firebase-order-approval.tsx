@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { normalizePhoneNumber } from "@/lib/auth/phone";
 import { getFirebaseAuth } from "@/lib/db/client";
+import { invalidateJson } from "@/lib/client/api-cache";
 
 export function FirebaseOrderApproval({ orderId, phone, onVerified }: { orderId: string; phone: string | null; onVerified: () => void }) {
   const [otpCode, setOtpCode] = useState("");
@@ -17,6 +18,7 @@ export function FirebaseOrderApproval({ orderId, phone, onVerified }: { orderId:
   const [error, setError] = useState("");
   const confirmationRef = useRef<ConfirmationResult | null>(null);
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
+  const recaptchaContainerId = `order-otp-recaptcha-${orderId}`;
 
   useEffect(() => () => recaptchaRef.current?.clear(), []);
 
@@ -31,8 +33,11 @@ export function FirebaseOrderApproval({ orderId, phone, onVerified }: { orderId:
       const auth = getFirebaseAuth();
       auth.useDeviceLanguage();
       recaptchaRef.current?.clear();
-      recaptchaRef.current = new RecaptchaVerifier(auth, "send-order-otp-button", { size: "invisible" });
+      recaptchaRef.current = new RecaptchaVerifier(auth, recaptchaContainerId, { size: "invisible" });
+      await recaptchaRef.current.render();
       confirmationRef.current = await signInWithPhoneNumber(auth, normalizePhoneNumber(phone), recaptchaRef.current);
+      recaptchaRef.current.clear();
+      recaptchaRef.current = null;
       setOtpSent(true);
       setOtpCode("");
     } catch (sendError) {
@@ -62,8 +67,10 @@ export function FirebaseOrderApproval({ orderId, phone, onVerified }: { orderId:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, firebaseIdToken }),
       });
-      const payload = await response.json();
+      const payload = await response.json().catch(() => ({ message: "Firebase OTP verification failed" }));
       if (!response.ok) throw new Error(payload.message || "Firebase OTP verification failed");
+      invalidateJson("/api/orders");
+      invalidateJson("/api/dashboard");
       setSuccess(true);
       confirmationRef.current = null;
       recaptchaRef.current?.clear();
@@ -82,10 +89,11 @@ export function FirebaseOrderApproval({ orderId, phone, onVerified }: { orderId:
   if (success) return <div className="rounded-lg border border-green-300 bg-green-50 p-4"><p className="flex items-center gap-2 text-sm font-semibold text-green-800"><CheckCircle2 className="h-4 w-4" />Order approved with Firebase OTP</p><p className="mt-1 text-xs text-green-700">The order is moving to the next approval stage.</p></div>;
 
   return <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-4">
+    <div id={recaptchaContainerId} />
     <p className="flex items-center gap-2 text-sm font-semibold text-yellow-800"><KeyRound className="h-4 w-4" />Distributor approval OTP</p>
     <p className="mt-1 text-xs text-yellow-700">Review the products, quantities, and total above. Firebase will send the approval code to the registered phone{phone ? ` ending in ${phone.replace(/\D/g, "").slice(-4)}` : ""}.</p>
-    {!otpSent ? <Button id="send-order-otp-button" className="mt-3" onClick={sendOtp} disabled={sending}>{sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{sending ? "Sending Firebase OTP…" : "Send approval OTP"}</Button>
-      : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input aria-label="Order approval OTP" inputMode="numeric" autoComplete="one-time-code" placeholder="Enter 6-digit OTP" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} maxLength={6} className="font-mono text-lg tracking-widest" disabled={verifying} /><Button onClick={verifyOtp} disabled={verifying || otpCode.length !== 6}>{verifying ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <KeyRound className="mr-1 h-4 w-4" />}Verify order</Button><Button id="send-order-otp-button" variant="outline" onClick={sendOtp} disabled={sending}>{sending ? "Sending…" : "Resend"}</Button></div>}
+    {!otpSent ? <Button type="button" className="mt-3" onClick={sendOtp} disabled={sending || verifying}>{sending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{sending ? "Sending Firebase OTP…" : "Send approval OTP"}</Button>
+      : <div className="mt-3 flex flex-col gap-2 sm:flex-row"><Input aria-label="Order approval OTP" inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="Enter 6-digit OTP" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))} onKeyDown={(event) => { if (event.key === "Enter" && otpCode.length === 6 && !verifying) void verifyOtp(); }} maxLength={6} className="font-mono text-lg tracking-widest" disabled={verifying || sending} /><Button type="button" onClick={verifyOtp} disabled={verifying || sending || otpCode.length !== 6}>{verifying ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <KeyRound className="mr-1 h-4 w-4" />}{verifying ? "Verifying…" : "Verify order"}</Button><Button type="button" variant="outline" onClick={sendOtp} disabled={sending || verifying}>{sending ? <><Loader2 className="mr-1 h-4 w-4 animate-spin" />Sending…</> : "Resend"}</Button></div>}
     {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
   </div>;
 }

@@ -12,6 +12,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { CollapsibleSection, OrderBarChart, RevenueLineChart } from "@/components/dashboard/charts";
 import { formatCurrency } from "@/lib/utils";
 import type { DashboardResponse } from "@/types/dashboard";
+import { getJson } from "@/lib/client/api-cache";
 
 const statusVariant: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
   DRAFT: "outline",
@@ -57,10 +58,7 @@ export function OperationsDashboard() {
     background ? setRefreshing(true) : setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/dashboard?${queryString}`, { cache: "no-store" });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.message || "Unable to load dashboard");
-      setData(payload);
+      setData(await getJson<DashboardResponse>(`/api/dashboard?${queryString}`, { ttlMs: 15_000, force: background }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard");
     } finally {
@@ -75,8 +73,15 @@ export function OperationsDashboard() {
   }, [load]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => load(true), 30_000);
-    return () => window.clearInterval(interval);
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") load(true);
+    };
+    const interval = window.setInterval(refreshIfVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, [load]);
 
   if (loading && !data) return <DashboardSkeleton />;

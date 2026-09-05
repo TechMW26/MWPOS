@@ -1,15 +1,15 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
+    ".read": false,
+    ".write": false,
     "users": {
       ".indexOn": ["email", "role"]
     },
     "stores": {
       ".indexOn": ["type"]
     },
-    "otpChallenges": {
-      ".indexOn": ["destination"]
+    "orders": {
+      ".indexOn": ["createdAt", "distributorId", "asmId", "cfId"]
     },
     "auditLogs": {
       ".indexOn": ["createdAt"]

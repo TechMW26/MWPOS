@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConfirmDialog } from '@/components/ui/modal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
+import { invalidateJson } from '@/lib/client/api-cache';
 import { ArrowLeft, CheckCircle2, Clock, Edit3, History, KeyRound, Loader2, Package, ReceiptText, ShieldCheck, UserRoundCheck, XCircle } from 'lucide-react';
 
 const FirebaseOrderApproval = dynamic(
@@ -120,6 +122,7 @@ function readable(value: string): string {
 }
 
 export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
+  const router = useRouter();
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -164,6 +167,8 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to update quantity');
+      invalidateJson('/api/orders');
+      invalidateJson('/api/dashboard');
       setEditingItem(null);
       loadOrder();
     } catch (e: any) {
@@ -183,7 +188,9 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to cancel order');
-      window.location.href = backHref;
+      invalidateJson('/api/orders');
+      invalidateJson('/api/dashboard');
+      router.push(backHref);
     } catch (e: any) {
       setTransitionError(e.message || 'Failed to cancel order');
     } finally {
@@ -205,6 +212,8 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || 'Unable to update order');
+      invalidateJson('/api/orders');
+      invalidateJson('/api/dashboard');
       setTransitionNotes('');
       loadOrder();
     } catch (transitionFailure) {
@@ -217,8 +226,8 @@ export function OrderSummary({ orderId, backHref, role }: OrderSummaryProps) {
   const canManageOrder = ['SUPERADMIN', 'ADMIN', 'C_AND_F'].includes(role || '');
   const canVerifyOtp = role === 'DISTRIBUTOR';
   const canEditQuantity = ['SUPERADMIN', 'ADMIN'].includes(role || '')
-    ? !['DELIVERED', 'CANCELLED', 'REJECTED', 'CF_REJECTED'].includes(order?.status)
-    : role === 'C_AND_F' && ['PENDING_CF_APPROVAL', 'CF_APPROVED', 'ALLOCATED', 'PICKING', 'PACKED'].includes(order?.status);
+    ? ['PENDING_OTP', 'OTP_VERIFIED', 'PENDING_CF_APPROVAL'].includes(order?.status)
+    : role === 'C_AND_F' && order?.status === 'PENDING_CF_APPROVAL';
   const canCancel = canManageOrder && (allowedTransitions[order?.status] || []).includes('CANCELLED');
 
   if (loading) return <div className="p-6 text-muted-foreground">Loading order summary...</div>;

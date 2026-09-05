@@ -10,7 +10,6 @@ const SESSION_COOKIE = 'mxpos_session'
 const PUBLIC_PATHS = [
   '/login',
   '/api/',
-  '/test-notification',
   '/offline'
 ]
 

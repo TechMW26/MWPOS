@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function AdminInventoryPage() {
   const [distributors, setDistributors] = useState<any[]>([]);
@@ -39,6 +40,7 @@ export default function AdminInventoryPage() {
   async function handleMovement(e: React.FormEvent) {
     e.preventDefault();
     await fetch('/api/inventory/movement', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...movForm, storeId: selectedDistributor, idempotencyKey: crypto.randomUUID() }) });
+    invalidateJson('/api/dashboard');
     setShowMovement(false);
     const res = await fetch('/api/inventory?storeId='+selectedDistributor); const data = await res.json(); setInventory(Array.isArray(data) ? data : []);
   }

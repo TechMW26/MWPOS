@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 function configuredMasterOtp(): string {
-  return (process.env.LOGIN_MASTER_OTP || process.env.MASTER_OTP || "").trim();
+  return (process.env.LOGIN_MASTER_OTP || "").trim();
 }
 
 export function isMasterOtpEnabled(): boolean {

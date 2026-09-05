@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { Flame, Loader2, Target } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { getJson } from "@/lib/client/api-cache";
 
 type TargetRow = { id: string; month: string; targetPaise: number; achievedPaise: number; remainingPaise: number; progressPercent: number; asmName?: string };
 
 export function TargetProgress({ compact = false }: { compact?: boolean }) {
   const [row, setRow] = useState<TargetRow | null | undefined>(undefined);
-  useEffect(() => { fetch("/api/targets", { cache: "no-store" }).then((response) => response.json()).then((payload) => setRow(Array.isArray(payload.targets) ? payload.targets[0] ?? null : null)).catch(() => setRow(null)); }, []);
+  useEffect(() => { getJson<any>("/api/targets", { ttlMs: 30_000 }).then((payload) => setRow(Array.isArray(payload.targets) ? payload.targets[0] ?? null : null)).catch(() => setRow(null)); }, []);
   if (row === undefined) return <div className="flex min-h-32 items-center justify-center rounded-[1.5rem] border bg-white text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading target</div>;
   if (!row) return <div className="rounded-[1.5rem] border bg-white p-5 shadow-sm"><Target className="mb-3 h-8 w-8 text-slate-300" /><p className="font-bold">No target assigned</p><p className="mt-1 text-sm text-muted-foreground">Your admin has not set a target for this month.</p></div>;
   return <div className={`overflow-hidden rounded-[1.65rem] bg-slate-950 text-white shadow-xl ${compact ? "p-4" : "p-5"}`}>

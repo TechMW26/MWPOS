@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
+import { getJson } from "@/lib/client/api-cache";
 import { formatCurrency } from "@/lib/utils";
 
 const statusVariant: Record<string, "default" | "success" | "warning" | "destructive" | "outline"> = {
@@ -33,15 +34,13 @@ export function OrderHistory({ basePath, newOrderHref }: { basePath: string; new
   const loadOrders = useCallback((refresh = false) => {
     if (refresh) setRefreshing(true);
     setError("");
-    fetch("/api/orders?days=365&limit=250", { cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.message || "Unable to load orders");
+    getJson<any[]>(`/api/orders?days=${days}&limit=250`, { ttlMs: 15_000, force: refresh })
+      .then((payload) => {
         setOrders(Array.isArray(payload) ? payload : []);
       })
       .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Unable to load orders"))
       .finally(() => { setLoading(false); setRefreshing(false); });
-  }, []);
+  }, [days]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 

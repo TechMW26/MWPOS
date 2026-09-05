@@ -41,7 +41,9 @@ export async function getAuditLogs(input: {
   action?: AuditAction;
   limit?: number;
 }): Promise<AuditLog[]> {
-  const snapshot = await adminDb.ref("auditLogs").once("value");
+  const limit = Math.min(1000, Math.max(1, input.limit ?? 100));
+  const fetchLimit = Math.min(3000, Math.max(250, limit * 5));
+  const snapshot = await adminDb.ref("auditLogs").orderByChild("createdAt").limitToLast(fetchLimit).once("value");
   if (!snapshot.exists()) return [];
 
   const logs = snapshot.val() as Record<string, AuditLog> | null;
@@ -56,6 +58,5 @@ export async function getAuditLogs(input: {
 
   results.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const limit = input.limit ?? 100;
   return results.slice(0, limit);
 }

@@ -64,7 +64,6 @@ async function cleanup() {
   await adminDb.ref("ordersByStore").remove();
   await adminDb.ref("ordersByDistributor").remove();
   await adminDb.ref("ordersByStatus").remove();
-  await adminDb.ref("orderOtpRequests").remove();
   await adminDb.ref("idempotencyKeys").remove();
   console.log("   Orders cleared");
 

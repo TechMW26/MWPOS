@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/modal";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Select } from "@/components/ui/select";
 import { INDIAN_STATES, getDistrictsForState } from "@/lib/indian-districts";
+import { invalidateJson } from "@/lib/client/api-cache";
 import type { Distributor } from "@/types/models";
 
 const emptyForm = {
@@ -125,6 +126,9 @@ export default function AsmDistributorsPage() {
           : "";
         throw new Error(fieldErrors || payload?.message || "Unable to add distributor.");
       }
+      invalidateJson("/api/stores");
+      invalidateJson("/api/marketplace");
+      invalidateJson("/api/dashboard");
       setForm(emptyForm);
       setOpen(false);
       await load();

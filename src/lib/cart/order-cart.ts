@@ -4,6 +4,7 @@ export interface OrderCartItem {
   productName: string;
   sku: string;
   unit: string;
+  piecesPerBox?: number;
   quantity: number;
   unitPrice: number;
   taxRate: number;
@@ -16,6 +17,25 @@ export interface OrderCartTotals {
   subtotal: number;
   tax: number;
   total: number;
+}
+
+export const MAX_ORDER_PIECES = 100_000;
+
+export function getPiecesPerBox(value: number | undefined): number {
+  return Math.min(10_000, Math.max(1, Math.floor(Number(value) || 1)));
+}
+
+export function getCartQuantityLabel(item: Pick<OrderCartItem, "quantity" | "piecesPerBox">): string {
+  const pieces = Math.max(1, Math.floor(Number(item.quantity) || 1));
+  const packSize = getPiecesPerBox(item.piecesPerBox);
+  if (packSize === 1 || pieces < packSize) return `${pieces} ${pieces === 1 ? "piece" : "pieces"}`;
+
+  const boxes = Math.floor(pieces / packSize);
+  const loosePieces = pieces % packSize;
+  const boxLabel = `${boxes} ${boxes === 1 ? "box" : "boxes"}`;
+  return loosePieces > 0
+    ? `${boxLabel} + ${loosePieces} ${loosePieces === 1 ? "piece" : "pieces"}`
+    : boxLabel;
 }
 
 export function addCartItem(cart: OrderCartItem[], item: OrderCartItem): OrderCartItem[] {

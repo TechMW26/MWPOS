@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Bell, CheckCheck, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getJson, invalidateJson } from "@/lib/client/api-cache";
 import type { Notification } from "@/types/models";
 
 export function NotificationCenter() {
@@ -11,8 +12,7 @@ export function NotificationCenter() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const response = await fetch("/api/notifications", { cache: "no-store" });
-    const payload = await response.json();
+    const payload = await getJson<any>("/api/notifications", { ttlMs: 15_000 });
     setItems(Array.isArray(payload.notifications) ? payload.notifications : []);
     setLoading(false);
   }
@@ -21,6 +21,7 @@ export function NotificationCenter() {
 
   async function markRead(id?: string) {
     await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(id ? { id } : { all: true }) });
+    invalidateJson("/api/notifications");
     setItems((current) => current.map((item) => !id || item.id === id ? { ...item, read: true } : item));
   }
 

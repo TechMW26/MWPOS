@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const days = ALLOWED_DAYS.has(requestedDays) ? requestedDays : 30;
     const data = await getDashboard(session, {
       days,
+      compact: params.get("compact") === "1",
       distributorId: params.get("distributorId") || undefined,
       asmId: params.get("asmId") || undefined,
       status: (params.get("status") || undefined) as OrderStatus | undefined,

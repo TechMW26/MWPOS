@@ -8,9 +8,6 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:emulators": "firebase emulators:exec --project demo-mxpos \"vitest run --config vitest.emulators.config.ts\"",
     "seed": "tsx scripts/seed.ts",
     "emulators": "firebase emulators:start --project demo-mxpos"
   },
@@ -35,13 +32,11 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^4.0.0",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^6.4.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/uuid": "^10.0.0",
-    "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.0.0",
@@ -49,8 +44,7 @@
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "typescript": "^5.6.0"
   },
   "overrides": {
     "uuid": "$uuid",

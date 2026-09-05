@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private var pendingDeepLink: String? = null
+    private var cachedFcmToken: String? = null
+    private var fcmTokenRequestInFlight = false
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -118,12 +120,18 @@ class MainActivity : AppCompatActivity() {
                 builtInZoomControls = true
                 displayZoomControls = false
                 mediaPlaybackRequiresUserGesture = false
+                cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    offscreenPreRaster = true
+                }
 
                 // Enable smooth rendering
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     isForceDarkAllowed = false
                 }
             }
+
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
 
             CookieManager.getInstance().setAcceptCookie(true)
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -223,9 +231,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchAndSendFcmToken() {
+        cachedFcmToken?.let {
+            sendTokenToWebView(it)
+            return
+        }
+        if (fcmTokenRequestInFlight) return
+        fcmTokenRequestInFlight = true
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            fcmTokenRequestInFlight = false
             if (task.isSuccessful) {
                 val token = task.result
+                cachedFcmToken = token
                 Log.d(TAG, "FCM token: ${token.take(20)}...")
                 sendTokenToWebView(token)
             } else {

@@ -53,11 +53,19 @@ export function getFirebaseAdminApp(): App {
     throw new Error("Firebase Admin credentials are not configured");
   }
 
-  return initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
-    projectId,
-    databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
-  });
+  try {
+    return initializeApp({
+      credential: cert({ projectId, clientEmail, privateKey }),
+      projectId,
+      databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+    });
+  } catch (error) {
+    console.error(
+      "Failed to initialize Firebase Admin. Ensure FIREBASE_ADMIN_PRIVATE_KEY is a valid PKCS#8 service-account key (-----BEGIN PRIVATE KEY-----) with real newlines.",
+      error
+    );
+    throw new Error("Firebase Admin private key is invalid or not in PKCS#8 format. Check server logs.");
+  }
 }
 
 export function getFirebaseAdminAuth(): Auth {

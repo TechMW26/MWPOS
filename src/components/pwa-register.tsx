@@ -15,29 +15,33 @@ export function PwaRegister () {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
 
-    navigator.serviceWorker
-      .register('/sw.js', { scope: '/' })
-      .then(reg => {
-        console.log('[PWA] Service Worker registered:', reg.scope)
+    const register = () => {
+      navigator.serviceWorker
+        .register('/sw.js', { scope: '/' })
+        .then(reg => {
+          console.log('[PWA] Service Worker registered:', reg.scope)
 
-        // Listen for updates — but DO NOT auto-reload (causes infinite loops)
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing
-          if (!newWorker) return
+          // Listen for updates — but DO NOT auto-reload (causes infinite loops)
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing
+            if (!newWorker) return
 
-          newWorker.addEventListener('statechange', () => {
-            if (
-              newWorker.state === 'installed' &&
-              navigator.serviceWorker.controller
-            ) {
-              console.log('[PWA] Update available — will activate on next load')
-            }
+            newWorker.addEventListener('statechange', () => {
+              if (
+                newWorker.state === 'installed' &&
+                navigator.serviceWorker.controller
+              ) {
+                console.log('[PWA] Update available — will activate on next load')
+              }
+            })
           })
         })
-      })
-      .catch(err => {
-        console.error('[PWA] Service Worker registration failed:', err)
-      })
+        .catch(err => {
+          console.error('[PWA] Service Worker registration failed:', err)
+        })
+    }
+    const timer = window.setTimeout(register, 1_000)
+    return () => window.clearTimeout(timer)
   }, [])
 
   return null

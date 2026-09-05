@@ -4,6 +4,7 @@ import { getOrder, createOrder, approveOrder } from "@/lib/services/order-servic
 import { createOrderSchema } from "@/lib/validation/schemas";
 import { v4 as uuidv4 } from "uuid";
 import { adminDb } from "@/lib/db/admin";
+import { territoryMatchesResource } from "@/lib/auth/authorization";
 import type { Order, SessionData, Store, User } from "@/types/models";
 
 function canViewOrder(session: SessionData, order: Order): boolean {
@@ -67,7 +68,8 @@ export async function GET(request: Request) {
     return NextResponse.json((await getOrderContext([order], true))[0]);
   }
 
-  const snap = await adminDb.ref("orders").once("value");
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const snap = await adminDb.ref("orders").orderByChild("createdAt").startAt(new Date(cutoff).toISOString()).once("value");
   const all = snap.val() as Record<string, Order> | null;
   let orders = all ? Object.values(all).filter((order) => canViewOrder(session, order)) : [];
   if (distributorId) {
@@ -77,7 +79,6 @@ export async function GET(request: Request) {
     }
     orders = orders.filter((order) => order.distributorId === distributorId);
   }
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
   orders = orders.filter((order) => Date.parse(order.createdAt) >= cutoff);
   if (status) orders = orders.filter((order) => order.status === status);
   if (asmId) orders = orders.filter((order) => order.asmId === asmId);
@@ -113,17 +114,33 @@ export async function POST(request: Request) {
     ]);
     const stores = sourceStoreSnap.val();
     const distributionStores = stores ? Object.values(stores) as Store[] : [];
-    let assignedCfId = session.cfId;
+    let assignedCfId = session.role === "C_AND_F" ? session.uid : session.cfId;
+    if (session.role === "ASM" && !assignedCfId) {
+      return NextResponse.json({ message: "No C&F is assigned to your ASM account" }, { status: 400 });
+    }
     if (!assignedCfId && distributorSnap.exists()) {
       const distributor = distributorSnap.val() as Store;
       const asmsSnap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").get();
       const asms = (asmsSnap.val() as Record<string, User> | null) || {};
-      assignedCfId = Object.values(asms).find((asm) => asm.isActive && asm.approvalStatus === "APPROVED" && asm.districtId === distributor.districtId && asm.cfId)?.cfId ?? null;
+      const matchingCfIds = Array.from(new Set(Object.values(asms)
+        .filter((asm) => asm.isActive && asm.approvalStatus === "APPROVED" && territoryMatchesResource(asm, distributor.districtId))
+        .map((asm) => asm.cfId)
+        .filter((cfId): cfId is string => Boolean(cfId))));
+      if (matchingCfIds.length > 1) {
+        return NextResponse.json({ message: "Multiple C&F accounts match this distributor territory; assign one explicitly" }, { status: 409 });
+      }
+      assignedCfId = matchingCfIds[0] ?? null;
     }
-    const sourceStore = distributionStores.find((store) => assignedCfId && (store.ownerUid === assignedCfId || store.managerUid === assignedCfId))
-      || distributionStores.find((store) => store.isActive);
+    const activeDistributionStores = distributionStores.filter((store) => store.isActive && store.approvalStatus === "APPROVED");
+    const sourceStore = assignedCfId
+      ? activeDistributionStores.find((store) => store.ownerUid === assignedCfId || store.managerUid === assignedCfId)
+      : activeDistributionStores[0];
     if (!sourceStore) {
-      return NextResponse.json({ message: "No active distribution warehouse is configured" }, { status: 400 });
+      return NextResponse.json({
+        message: assignedCfId
+          ? "The assigned C&F does not have an active approved distribution warehouse"
+          : "No active approved distribution warehouse is configured",
+      }, { status: 400 });
     }
     const sourceStoreId = sourceStore.id;
 
@@ -132,6 +149,7 @@ export async function POST(request: Request) {
       distributorId,
       sourceStoreId,
       asmId: session.role === "ASM" ? session.uid : "",
+      assignedCfId,
       idempotencyKey: parsed.data.idempotencyKey || uuidv4(),
     }, session);
 

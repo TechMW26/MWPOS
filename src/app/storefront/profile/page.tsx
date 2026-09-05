@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function ProfilePage() {
   const [session, setSession] = useState<any>(null);
@@ -19,6 +20,7 @@ export default function ProfilePage() {
   async function addStore(e: React.FormEvent) {
     e.preventDefault();
     await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     setForm({ name:'', type:'CUSTOMER', address:'', city:'', state:'', pincode:'', phone:'', email:'' });
     const data = await fetch('/api/stores?type=CUSTOMER&mine=1').then(r => r.json());
     setStores(Array.isArray(data) ? data : []);

@@ -6,6 +6,7 @@ import { territoryMatchesResource } from "@/lib/auth/authorization";
 
 export interface DashboardFilters {
   days: number;
+  compact?: boolean;
   distributorId?: string;
   asmId?: string;
   status?: OrderStatus;
@@ -33,6 +34,10 @@ const STATUS_COLORS: Partial<Record<OrderStatus, string>> = {
 
 function values<T>(input: unknown): T[] {
   return input && typeof input === "object" ? Object.values(input as Record<string, T>) : [];
+}
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function orderBasePath(role: SessionData["role"]): string {
@@ -82,19 +87,25 @@ function buildPerformance(
   orders: Order[],
   key: (order: Order) => string
 ): DashboardPerformanceRow[] {
-  return entities.map((entity) => {
-    const matches = orders.filter((order) => key(order) === entity.id);
-    const sorted = [...matches].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
-    return {
-      id: entity.id,
-      name: entity.name,
-      orders: matches.length,
-      delivered: matches.filter((order) => order.status === "DELIVERED").length,
-      pending: matches.filter((order) => ["PENDING_OTP", "PENDING_CF_APPROVAL"].includes(order.status)).length,
-      valuePaise: matches.reduce((sum, order) => sum + (order.totalPaise || 0), 0),
-      lastOrderAt: sorted[0]?.createdAt ?? null,
-    };
-  }).filter((row) => row.orders > 0).sort((a, b) => b.valuePaise - a.valuePaise);
+  const rows = new Map(entities.map((entity) => [entity.id, {
+    id: entity.id,
+    name: entity.name,
+    orders: 0,
+    delivered: 0,
+    pending: 0,
+    valuePaise: 0,
+    lastOrderAt: null as string | null,
+  }]));
+  for (const order of orders) {
+    const row = rows.get(key(order));
+    if (!row) continue;
+    row.orders += 1;
+    row.delivered += order.status === "DELIVERED" ? 1 : 0;
+    row.pending += ["PENDING_OTP", "PENDING_CF_APPROVAL"].includes(order.status) ? 1 : 0;
+    row.valuePaise += order.totalPaise || 0;
+    if (!row.lastOrderAt || Date.parse(order.createdAt) > Date.parse(row.lastOrderAt)) row.lastOrderAt = order.createdAt;
+  }
+  return Array.from(rows.values()).filter((row) => row.orders > 0).sort((a, b) => b.valuePaise - a.valuePaise);
 }
 
 function getInventoryBalances(raw: unknown): InventoryBalance[] {
@@ -114,17 +125,20 @@ function activityFromOrders(orders: Order[], usersById: Map<string, User>): Dash
 }
 
 export async function getDashboard(session: SessionData, filters: DashboardFilters): Promise<DashboardResponse> {
+  const cutoff = Date.now() - filters.days * 24 * 60 * 60 * 1000;
+  const cutoffIso = new Date(cutoff).toISOString();
   const [ordersSnap, storesSnap, usersSnap, productsSnap, inventorySnap, auditSnap] = await Promise.all([
-    adminDb.ref("orders").get(),
+    adminDb.ref("orders").orderByChild("createdAt").startAt(cutoffIso).get(),
     adminDb.ref("stores").get(),
     adminDb.ref("users").get(),
-    adminDb.ref("products").get(),
-    adminDb.ref("inventoryBalances").get(),
-    adminDb.ref("auditLogs").get(),
+    filters.compact ? Promise.resolve(null) : adminDb.ref("products").get(),
+    filters.compact ? Promise.resolve(null) : adminDb.ref("inventoryBalances").get(),
+    filters.compact ? Promise.resolve(null) : adminDb.ref("auditLogs").orderByChild("createdAt").startAt(cutoffIso).limitToLast(1000).get(),
   ]);
 
   const allOrders = values<Order>(ordersSnap.val());
   const allStores = values<Store>(storesSnap.val());
+  const storesById = new Map(allStores.map((store) => [store.id, store]));
   const users = values<User>(usersSnap.val());
   const usersById = new Map(users.map((user) => [user.uid, user]));
   const scopedOrders = scopeOrdersForSession(session, allOrders);
@@ -134,7 +148,6 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
   const allowedDistributorIds = new Set(distributors.map((store) => store.id));
   const allowedAsmIds = new Set(asms.map((asm) => asm.uid));
 
-  const cutoff = Date.now() - filters.days * 24 * 60 * 60 * 1000;
   const query = filters.search?.trim().toLowerCase() || "";
   let orders = scopedOrders.filter((order) => Date.parse(order.createdAt) >= cutoff);
   if (filters.distributorId) orders = allowedDistributorIds.has(filters.distributorId) ? orders.filter((order) => order.distributorId === filters.distributorId) : [];
@@ -142,7 +155,7 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
   if (filters.status) orders = orders.filter((order) => order.status === filters.status);
   if (query) {
     orders = orders.filter((order) => {
-      const distributor = allStores.find((store) => store.id === order.distributorId)?.name || "";
+      const distributor = storesById.get(order.distributorId)?.name || "";
       const asm = usersById.get(order.asmId)?.displayName || "";
       return [order.id, distributor, asm, order.status].some((value) => value.toLowerCase().includes(query));
     });
@@ -154,33 +167,50 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
   const inventoryStoreIds = session.role === "SUPERADMIN" || session.role === "ADMIN"
     ? new Set(stores.map((store) => store.id))
     : new Set([...visibleDistributorIds, ...sourceStoreIds]);
-  const inventory = getInventoryBalances(inventorySnap.val()).filter((balance) => inventoryStoreIds.has(balance.storeId));
-  const activeProducts = values<{ isActive?: boolean }>(productsSnap.val()).filter((product) => product.isActive !== false).length;
-  const orderValuePaise = orders.reduce((sum, order) => sum + (order.totalPaise || 0), 0);
-  const khataDuePaise = orders.filter((order) => order.paymentMode === "PAY_LATER" && order.paymentStatus !== "COMPLETED")
-    .reduce((sum, order) => sum + Math.max(0, (order.totalPaise || 0) - (order.paidAmountPaise || 0)), 0);
-  const delivered = orders.filter((order) => order.status === "DELIVERED").length;
+  const inventory = getInventoryBalances(inventorySnap?.val()).filter((balance) => inventoryStoreIds.has(balance.storeId));
+  const activeProducts = values<{ isActive?: boolean }>(productsSnap?.val()).filter((product) => product.isActive !== false).length;
+  let orderValuePaise = 0;
+  let khataDuePaise = 0;
+  let delivered = 0;
+  let pendingApprovals = 0;
+  const activeClientIds = new Set<string>();
+  const activeAsmIds = new Set<string>();
+  const statusTotals = new Map<OrderStatus, number>();
+  for (const order of orders) {
+    orderValuePaise += order.totalPaise || 0;
+    if (order.paymentMode === "PAY_LATER" && order.paymentStatus !== "COMPLETED") {
+      khataDuePaise += Math.max(0, (order.totalPaise || 0) - (order.paidAmountPaise || 0));
+    }
+    if (order.status === "DELIVERED") delivered += 1;
+    if (["PENDING_OTP", "PENDING_CF_APPROVAL"].includes(order.status)) pendingApprovals += 1;
+    activeClientIds.add(order.distributorId);
+    if (order.asmId) activeAsmIds.add(order.asmId);
+    statusTotals.set(order.status, (statusTotals.get(order.status) || 0) + 1);
+  }
 
   const trend = Array.from({ length: Math.min(filters.days, 30) }, (_, index) => {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     date.setDate(date.getDate() - (Math.min(filters.days, 30) - index - 1));
-    const next = new Date(date); next.setDate(next.getDate() + 1);
-    const matches = orders.filter((order) => {
-      const time = Date.parse(order.createdAt);
-      return time >= date.getTime() && time < next.getTime();
-    });
     return {
       label: date.toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
-      value: matches.reduce((sum, order) => sum + (order.totalPaise || 0), 0),
-      orders: matches.length,
+      dateKey: localDateKey(date),
+      value: 0,
+      orders: 0,
     };
   });
+  const trendByDate = new Map(trend.map((row) => [row.dateKey, row]));
+  for (const order of orders) {
+    const row = trendByDate.get(localDateKey(new Date(order.createdAt)));
+    if (!row) continue;
+    row.value += order.totalPaise || 0;
+    row.orders += 1;
+  }
 
-  const orderActivity = activityFromOrders(orders, usersById);
+  const orderActivity = filters.compact ? [] : activityFromOrders(orders.slice(0, 100), usersById);
   const visibleOrderIds = new Set(orders.map((order) => order.id));
   const hasOrderFilters = Boolean(filters.distributorId || filters.asmId || filters.status || query);
-  const auditActivity: DashboardActivityRow[] = values<AuditLog>(auditSnap.val()).filter((log) => {
+  const auditActivity: DashboardActivityRow[] = values<AuditLog>(auditSnap?.val()).filter((log) => {
       if (Date.parse(log.createdAt) < cutoff) return false;
       if (session.role === "SUPERADMIN" || session.role === "ADMIN") {
         if (!hasOrderFilters) return true;
@@ -216,25 +246,25 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
       orderValuePaise,
       averageOrderPaise: orders.length ? Math.round(orderValuePaise / orders.length) : 0,
       khataDuePaise,
-      pendingApprovals: orders.filter((order) => ["PENDING_OTP", "PENDING_CF_APPROVAL"].includes(order.status)).length,
+      pendingApprovals,
       delivered,
       fulfillmentRate: orders.length ? Math.round((delivered / orders.length) * 100) : 0,
-      activeClients: new Set(orders.map((order) => order.distributorId)).size,
-      activeAsms: new Set(orders.map((order) => order.asmId).filter(Boolean)).size,
+      activeClients: activeClientIds.size,
+      activeAsms: activeAsmIds.size,
       activeProducts,
       lowStock: inventory.filter((balance) => balance.available <= (balance.reorderThreshold ?? 10)).length,
     },
-    trend,
+    trend: trend.map(({ dateKey: _dateKey, ...row }) => row),
     statusCounts: ORDER_STATUSES.map((status) => ({
       label: status.replaceAll("_", " "),
-      value: orders.filter((order) => order.status === status).length,
+      value: statusTotals.get(status) || 0,
       color: STATUS_COLORS[status] || "#2563eb",
     })).filter((item) => item.value > 0),
     recentOrders: orders.slice(0, 25).map((order) => ({
       id: order.id,
       status: order.status,
       distributorId: order.distributorId,
-      distributorName: allStores.find((store) => store.id === order.distributorId)?.name || "Unknown distributor",
+      distributorName: storesById.get(order.distributorId)?.name || "Unknown distributor",
       asmId: order.asmId,
       asmName: order.asmId ? usersById.get(order.asmId)?.displayName || "Unassigned ASM" : "Direct order",
       placedByName: usersById.get(order.placedByUid)?.displayName || "Unknown user",

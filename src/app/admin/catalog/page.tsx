@@ -10,6 +10,7 @@ import { Plus, Search, Package, Loader2, ExternalLink, Trash2 } from 'lucide-rea
 import Link from 'next/link';
 import { formatCurrency } from '@/lib/utils';
 import { useRealtimeList } from '@/lib/hooks/use-realtime-list';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function AdminCatalogPage() {
   const [selectedStore, setSelectedStore] = useState('');
@@ -39,6 +40,9 @@ export default function AdminCatalogPage() {
   async function handleDelete() {
     if (!deleteProductId) return;
     await fetch('/api/products?id=' + deleteProductId, { method: 'DELETE' });
+    invalidateJson('/api/products');
+    invalidateJson('/api/marketplace');
+    invalidateJson('/api/dashboard');
   }
 
   async function handleAssign(productId: string) {
@@ -62,7 +66,7 @@ export default function AdminCatalogPage() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{live ? 'Live catalog updates on' : 'Auto refresh on'}</p>
         <div className="flex gap-2">
-          <Link href="/superadmin/catalog/new" className="w-full sm:w-auto">
+          <Link href="/admin/catalog/new" className="w-full sm:w-auto">
             <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button>
           </Link>
         </div>
@@ -86,7 +90,7 @@ export default function AdminCatalogPage() {
       {error ? (
         <Card className="border-destructive"><CardContent className="p-4 text-center"><p className="text-destructive">{error}</p></CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="p-4 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p>{!search && <Link href="/superadmin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
+        <Card><CardContent className="p-4 text-center"><Package className="h-12 w-12 mx-auto text-muted-foreground mb-4" /><p className="text-lg font-medium text-muted-foreground">No products found</p>{!search && <Link href="/admin/catalog/new" className="block sm:inline-block"><Button className="mt-4 w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />New Product</Button></Link>}</CardContent></Card>
       ) : (
         <div className="space-y-3">
           {filtered.map((product: any) => {
@@ -108,7 +112,7 @@ export default function AdminCatalogPage() {
                     <div className="flex items-center gap-3">
                       <div className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{productSkus.length}</span> SKU{productSkus.length !== 1 ? 's' : ''}</div>
                       {selectedStore && <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); handleAssign(product.id); }}>Assign to Store</Button>}
-                      <Link href={`/superadmin/catalog/new?edit=${product.id}`} onClick={e => e.stopPropagation()}><Button variant="outline" size="sm"><ExternalLink className="h-3 w-3 mr-1" />Edit</Button></Link>
+                      <Link href={`/admin/catalog/new?edit=${product.id}`} onClick={e => e.stopPropagation()}><Button variant="outline" size="sm"><ExternalLink className="h-3 w-3 mr-1" />Edit</Button></Link>
                       <Button variant="outline" size="sm" className="text-destructive" onClick={e => { e.stopPropagation(); setDeleteProductId(product.id); }}><Trash2 className="h-3 w-3" /></Button>
                     </div>
                   </div>
@@ -117,7 +121,7 @@ export default function AdminCatalogPage() {
                   <CardContent className="border-t pt-4">
                     {product.description && <p className="text-sm text-muted-foreground mb-4">{product.description}</p>}
                     {productSkus.length === 0 ? <p className="text-sm text-muted-foreground">No SKUs defined.</p> : (
-                      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground uppercase"><th className="py-2 px-3">SKU</th><th className="py-2 px-3">Unit</th><th className="py-2 px-3">Cost</th><th className="py-2 px-3">Sell Price</th><th className="py-2 px-3">MRP</th><th className="py-2 px-3">Tax</th></tr></thead><tbody>{productSkus.map((sku: any) => (<tr key={sku.id} className="border-b last:border-0 hover:bg-muted/30"><td className="py-2 px-3 font-mono font-medium">{sku.sku}</td><td className="py-2 px-3">{sku.unit}</td><td className="py-2 px-3">{formatCurrency(sku.costPrice)}</td><td className="py-2 px-3 font-medium">{formatCurrency(sku.sellingPrice)}</td><td className="py-2 px-3 text-muted-foreground">{formatCurrency(sku.mrp)}</td><td className="py-2 px-3">{sku.taxType} {sku.taxRate}%</td></tr>))}</tbody></table></div>
+                      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-xs text-muted-foreground uppercase"><th className="py-2 px-3">SKU</th><th className="py-2 px-3">Unit</th><th className="py-2 px-3">Pack</th><th className="py-2 px-3">Cost</th><th className="py-2 px-3">Sell Price</th><th className="py-2 px-3">MRP</th><th className="py-2 px-3">Tax</th></tr></thead><tbody>{productSkus.map((sku: any) => (<tr key={sku.id} className="border-b last:border-0 hover:bg-muted/30"><td className="py-2 px-3 font-mono font-medium">{sku.sku}</td><td className="py-2 px-3">{sku.unit}</td><td className="py-2 px-3 whitespace-nowrap">{Math.max(1, Number(sku.piecesPerBox) || 1)} pcs / box</td><td className="py-2 px-3">{formatCurrency(sku.costPrice)}</td><td className="py-2 px-3 font-medium">{formatCurrency(sku.sellingPrice)}</td><td className="py-2 px-3 text-muted-foreground">{formatCurrency(sku.mrp)}</td><td className="py-2 px-3">{sku.taxType} {sku.taxRate}%</td></tr>))}</tbody></table></div>
                     )}
                   </CardContent>
                 )}

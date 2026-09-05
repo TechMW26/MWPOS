@@ -130,6 +130,7 @@ export interface ProductSku {
   sku: string;
   barcode: string | null;
   unit: string; // "piece", "kg", "litre", "box"
+  piecesPerBox?: number; // defaults to 1 for legacy SKUs
   mrp: number; // paise
   sellingPrice: number; // paise - base before tax
   costPrice: number; // paise
@@ -237,10 +238,13 @@ export interface Order {
   asmId: string; // ASM who placed the order
   placedByUid: string;
   otpStatus: OtpVerificationStatus;
-  otpRequestId: string | null;
-  otpExpiresAt: string | null;
-  otpChannel: string | null; // "email" | "whatsapp"
+  /** Legacy fields may still be present on pre-Firebase orders. */
+  otpRequestId?: string | null;
+  otpExpiresAt?: string | null;
+  otpChannel: "firebase_sms" | null;
   otpDestination: string | null;
+  otpVerifiedAt?: string | null;
+  otpVerifiedBy?: string | null;
   cfId: string | null; // assigned C&F for approval
   cfApprovalStatus: "NOT_REQUIRED" | "PENDING" | "APPROVED" | "REJECTED";
   paymentMode: OrderPaymentMode;

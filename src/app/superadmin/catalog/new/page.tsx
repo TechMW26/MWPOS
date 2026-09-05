@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, Trash2, Save, Loader2, Package, Barcode } from "lucide-react";
 import Link from "next/link";
 import { paiseToRupees, rupeesToPaise } from "@/lib/utils";
+import { invalidateJson } from "@/lib/client/api-cache";
 
 interface SkuForm {
   key: string;
@@ -16,6 +17,7 @@ interface SkuForm {
   sku: string;
   barcode: string;
   unit: string;
+  piecesPerBox: number;
   mrp: number;
   sellingPrice: number;
   costPrice: number;
@@ -24,14 +26,14 @@ interface SkuForm {
 }
 
 function emptySku(): SkuForm {
-  return { key: crypto.randomUUID(), sku: "", barcode: "", unit: "piece", mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5 };
+  return { key: crypto.randomUUID(), sku: "", barcode: "", unit: "piece", piecesPerBox: 1, mrp: 0, sellingPrice: 0, costPrice: 0, taxType: "GST", taxRate: 5 };
 }
 
 function paiseToRupeesNumber(paise: number): number {
   return Number(paiseToRupees(paise));
 }
 
-function NewProductForm() {
+function NewProductForm({ basePath }: { basePath: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit");
@@ -61,7 +63,7 @@ function NewProductForm() {
           setProduct({ name: found.name || "", description: found.description || "", brand: found.brand || "", categoryId: found.categoryId || "cat-grocery", imageUrl: found.imageUrl || "" });
           const productSkus = (Array.isArray(allSkus) ? allSkus : []).filter((s: any) => s.productId === editId);
           if (productSkus.length > 0) {
-            setSkus(productSkus.map((s: any) => ({ key: crypto.randomUUID(), id: s.id, sku: s.sku || "", barcode: s.barcode || "", unit: s.unit || "piece", mrp: paiseToRupeesNumber(s.mrp || 0), sellingPrice: paiseToRupeesNumber(s.sellingPrice || 0), costPrice: paiseToRupeesNumber(s.costPrice || 0), taxType: s.taxType || "GST", taxRate: s.taxRate ?? 5 })));
+            setSkus(productSkus.map((s: any) => ({ key: crypto.randomUUID(), id: s.id, sku: s.sku || "", barcode: s.barcode || "", unit: s.unit || "piece", piecesPerBox: Math.max(1, Number(s.piecesPerBox) || 1), mrp: paiseToRupeesNumber(s.mrp || 0), sellingPrice: paiseToRupeesNumber(s.sellingPrice || 0), costPrice: paiseToRupeesNumber(s.costPrice || 0), taxType: s.taxType || "GST", taxRate: s.taxRate ?? 5 })));
           }
         } else {
           setError("Product not found");
@@ -105,6 +107,10 @@ function NewProductForm() {
     if (!product.name || !product.brand) { setError("Product name and brand are required."); return; }
     const validSkus = skus.filter(s => s.sku && s.sellingPrice > 0);
     if (validSkus.length === 0) { setError("At least one SKU with a code and selling price is required."); return; }
+    if (validSkus.some((sku) => !Number.isInteger(sku.piecesPerBox) || sku.piecesPerBox < 1 || sku.piecesPerBox > 10_000)) {
+      setError("Pieces per box must be a whole number between 1 and 10,000.");
+      return;
+    }
 
     setSaving(true); setError("");
     try {
@@ -130,15 +136,23 @@ function NewProductForm() {
       }
 
       // Save all SKUs in parallel
-      await Promise.all(validSkus.map(sku =>
+      const skuResponses = await Promise.all(validSkus.map(sku =>
         fetch("/api/skus", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...(sku.id ? { id: sku.id } : {}), productId, sku: sku.sku, barcode: sku.barcode || null, unit: sku.unit, mrp: rupeesToPaise(sku.mrp), sellingPrice: rupeesToPaise(sku.sellingPrice), costPrice: rupeesToPaise(sku.costPrice), taxType: sku.taxType, taxRate: sku.taxRate }),
+          body: JSON.stringify({ ...(sku.id ? { id: sku.id } : {}), productId, sku: sku.sku, barcode: sku.barcode || null, unit: sku.unit, piecesPerBox: Math.max(1, sku.piecesPerBox), mrp: rupeesToPaise(sku.mrp), sellingPrice: rupeesToPaise(sku.sellingPrice), costPrice: rupeesToPaise(sku.costPrice), taxType: sku.taxType, taxRate: sku.taxRate }),
         })
       ));
+      if (skuResponses.some((response) => !response.ok)) {
+        const failedResponse = skuResponses.find((response) => !response.ok);
+        const payload = await failedResponse?.json().catch(() => null);
+        throw new Error(payload?.message || "Failed to save product SKU");
+      }
 
-      router.push("/superadmin/catalog");
+      invalidateJson("/api/products");
+      invalidateJson("/api/marketplace");
+      invalidateJson("/api/dashboard");
+      router.push(basePath);
     } catch (e: any) {
       setError(e.message || "Save failed");
     } finally {
@@ -158,7 +172,7 @@ function NewProductForm() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/superadmin/catalog" className="text-muted-foreground hover:text-foreground">
+        <Link href={basePath} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <span className="text-sm text-muted-foreground">{isEdit ? "Edit Product" : "New Product"}</span>
@@ -275,6 +289,12 @@ function NewProductForm() {
                   </select>
                 </div>
                 <div>
+                  <label className="text-xs font-medium block mb-1">Pieces per box *</label>
+                  <Input type="number" min="1" max="10000" step="1" placeholder="e.g. 12" value={sku.piecesPerBox}
+                    onChange={e => updateSku(sku.key, "piecesPerBox", Number(e.target.value))} />
+                  <p className="mt-1 text-[11px] text-muted-foreground">Used for Piece / Box ordering.</p>
+                </div>
+                <div>
                   <label className="text-xs font-medium block mb-1">Tax Rate (%)</label>
                   <Input type="number" placeholder="5" value={sku.taxRate || ""}
                     onChange={e => updateSku(sku.key, "taxRate", Number(e.target.value) || 0)} />
@@ -302,7 +322,7 @@ function NewProductForm() {
 
       {/* Save */}
       <div className="grid gap-3 border-t pt-4 sm:flex sm:justify-end">
-        <Link href="/superadmin/catalog" className="w-full sm:w-auto">
+        <Link href={basePath} className="w-full sm:w-auto">
           <Button className="w-full sm:w-auto" variant="outline">Cancel</Button>
         </Link>
         <Button className="w-full sm:w-auto" onClick={handleSave} disabled={saving || uploading} size="lg">
@@ -314,14 +334,18 @@ function NewProductForm() {
   );
 }
 
-export default function NewProductPage() {
+export function ProductEditorPage({ basePath = "/superadmin/catalog" }: { basePath?: string }) {
   return (
     <Suspense fallback={
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     }>
-      <NewProductForm />
+      <NewProductForm basePath={basePath} />
     </Suspense>
   );
+}
+
+export default function NewProductPage() {
+  return <ProductEditorPage />;
 }

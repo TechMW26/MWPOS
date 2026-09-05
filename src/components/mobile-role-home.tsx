@@ -20,6 +20,7 @@ import {
 import { TargetProgress } from "@/components/target-progress";
 import { formatCurrency } from "@/lib/utils";
 import type { DashboardResponse } from "@/types/dashboard";
+import { getJson } from "@/lib/client/api-cache";
 
 type MobileRole = "DISTRIBUTOR" | "ASM" | "C_AND_F";
 
@@ -45,9 +46,9 @@ export function MobileRoleHome({ role }: { role: MobileRole }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    const controller = new AbortController();
-    fetch("/api/dashboard?days=30", { signal: controller.signal, cache: "no-store" }).then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.message || "Unable to load dashboard"); setData(payload); }).catch((loadError) => { if (loadError?.name !== "AbortError") setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard"); });
-    return () => controller.abort();
+    let active = true;
+    getJson<DashboardResponse>("/api/dashboard?days=30&compact=1", { ttlMs: 15_000 }).then((payload) => { if (active) setData(payload); }).catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard"); });
+    return () => { active = false; };
   }, []);
 
   if (!data && !error) return <div className="flex min-h-[55vh] items-center justify-center text-muted-foreground"><CircleNotchIcon className="mr-2 h-5 w-5 animate-spin" weight="bold" />Loading your workspace</div>;

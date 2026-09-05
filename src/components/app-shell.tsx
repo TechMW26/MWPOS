@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import { LogOut, Menu, Search, X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { getJson, invalidateJson } from "@/lib/client/api-cache";
 import { useRouter } from "next/navigation";
 
 export interface AppNavItem {
@@ -24,6 +25,7 @@ interface AppShellProps {
 
 export function AppShell({ children, nav, bottomNav, roleLabel }: AppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
   const [search, setSearch] = useState("");
@@ -71,8 +73,8 @@ export function AppShell({ children, nav, bottomNav, roleLabel }: AppShellProps)
     const timer = window.setTimeout(async () => {
       const next: Array<{ label: string; type: string; href: string; hint?: string }> = [];
       const [products, stores] = await Promise.all([
-        fetch("/api/products").then((r) => r.ok ? r.json() : []).catch(() => []),
-        fetch("/api/stores").then((r) => r.ok ? r.json() : []).catch(() => []),
+        getJson<any[]>("/api/products", { ttlMs: 300_000 }).catch(() => []),
+        getJson<any[]>("/api/stores", { ttlMs: 300_000 }).catch(() => []),
       ]);
       if (Array.isArray(products)) {
         products
@@ -115,7 +117,7 @@ export function AppShell({ children, nav, bottomNav, roleLabel }: AppShellProps)
               onSubmit={(event) => {
                 event.preventDefault();
                 const first = results[0];
-                if (first) window.location.href = first.href;
+                if (first) router.push(first.href);
               }}
               className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground transition-colors focus-within:border-primary focus-within:bg-background"
             >
@@ -293,6 +295,7 @@ function SignOutLink() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch { /* ignore */ }
+    invalidateJson();
     router.push("/login");
   }
 

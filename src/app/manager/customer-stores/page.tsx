@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Plus } from 'lucide-react';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function ManagerStoresPage() {
   const [stores, setStores] = useState<any[]>([]);
@@ -27,6 +28,7 @@ export default function ManagerStoresPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(form) });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     setShowForm(false); load();
   }
 

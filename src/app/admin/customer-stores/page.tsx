@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Plus, Check, X } from 'lucide-react';
+import { invalidateJson } from '@/lib/client/api-cache';
 
 export default function CustomerStoresPage() {
   const [stores, setStores] = useState<any[]>([]);
@@ -27,11 +28,13 @@ export default function CustomerStoresPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     await fetch('/api/stores', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(form) });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     setShowForm(false); load();
   }
 
   async function handleApproval(storeId: string, approvalStatus: 'APPROVED' | 'REJECTED') {
     await fetch('/api/stores', { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ storeId, approvalStatus }) });
+    invalidateJson('/api/stores'); invalidateJson('/api/marketplace'); invalidateJson('/api/dashboard');
     load();
   }
 

@@ -1,6 +1,5 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
-import { getDatabase } from 'firebase/database'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -24,10 +23,6 @@ function getFirebaseApp (): FirebaseApp {
 
 export function getFirebaseAuth () {
   return getAuth(getFirebaseApp())
-}
-
-export function getFirebaseDb () {
-  return getDatabase(getFirebaseApp())
 }
 
 export { getFirebaseApp }

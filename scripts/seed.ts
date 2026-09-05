@@ -42,7 +42,7 @@ async function seed() {
     "carts", "orders", "ordersByStore", "ordersByStatus",
     "fulfillments", "stockReservations", "registers", "registerSessions",
     "sales", "salesByStore", "returns", "payments",
-    "otpChallenges", "idempotencyKeys", "notifications", "auditLogs",
+    "idempotencyKeys", "notifications", "auditLogs",
   ];
   for (const path of pathsToClear) {
     await adminDb.ref(path).set(null);

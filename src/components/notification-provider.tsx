@@ -13,11 +13,7 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import {
-  getSwRegistration,
-  onForegroundMessage,
-  type NotificationPermissionState
-} from '@/lib/firebase/messaging'
+import type { NotificationPermissionState } from '@/lib/firebase/messaging'
 
 // ---------------------------------------------------------------------------
 // Context shape
@@ -58,22 +54,29 @@ export function NotificationProvider ({ children }: { children: ReactNode }) {
 
   // ── Register Service Worker on mount ──────────────────────
   useEffect(() => {
+    if (permission !== 'granted') return
     let cancelled = false
+    let timer: number | undefined
 
-    getSwRegistration()
-      .then(reg => {
-        if (cancelled || !reg) return
-        setSwReady(true)
-        console.log('[FCM-Provider] SW registered, scope:', reg.scope)
-      })
-      .catch(err => {
-        console.error('[FCM-Provider] SW registration failed:', err)
-      })
+    const register = () => {
+      import('@/lib/firebase/messaging')
+        .then(({ getSwRegistration }) => getSwRegistration())
+        .then(reg => {
+          if (cancelled || !reg) return
+          setSwReady(true)
+          console.log('[FCM-Provider] SW registered, scope:', reg.scope)
+        })
+        .catch(err => {
+          console.error('[FCM-Provider] SW registration failed:', err)
+        })
+    }
+    timer = window.setTimeout(register, 750)
 
     return () => {
       cancelled = true
+      if (timer) window.clearTimeout(timer)
     }
-  }, [])
+  }, [permission])
 
   // ── Track permission changes ──────────────────────────────
   useEffect(() => {
@@ -105,27 +108,31 @@ export function NotificationProvider ({ children }: { children: ReactNode }) {
 
   // ── Foreground message listener ───────────────────────────
   useEffect(() => {
+    if (permission !== 'granted') return
     let cancelled = false
     let cleanup: (() => void) | null = null
 
-    onForegroundMessage(payload => {
-      if (cancelled) return
-      console.log('[FCM-Provider] Foreground message:', payload)
-      setLastForegroundPayload(payload)
+    import('@/lib/firebase/messaging').then(({ onForegroundMessage }) => {
+      if (cancelled) return null
+      return onForegroundMessage(payload => {
+        if (cancelled) return
+        console.log('[FCM-Provider] Foreground message:', payload)
+        setLastForegroundPayload(payload)
 
-      // Show a local notification for foreground messages too
-      if (payload.notification?.title) {
-        try {
-          const { title, body, icon } = payload.notification
-          new Notification(title, {
-            body: body ?? '',
-            icon: icon ?? '/MW_POS.png',
-            tag: payload.data?.tag ?? 'fcm-foreground'
-          })
-        } catch {
-          // Notification constructor may fail silently
+        // Show a local notification for foreground messages too
+        if (payload.notification?.title) {
+          try {
+            const { title, body, icon } = payload.notification
+            new Notification(title, {
+              body: body ?? '',
+              icon: icon ?? '/MW_POS.png',
+              tag: payload.data?.tag ?? 'fcm-foreground'
+            })
+          } catch {
+            // Notification constructor may fail silently
+          }
         }
-      }
+      })
     }).then(unsub => {
       if (cancelled) {
         unsub?.()
@@ -138,7 +145,7 @@ export function NotificationProvider ({ children }: { children: ReactNode }) {
       cancelled = true
       cleanup?.()
     }
-  }, [])
+  }, [permission])
 
   const value: NotificationContextValue = {
     permission,

@@ -5,10 +5,11 @@ import { useEffect, useState } from "react";
 import { ChevronRight, Loader2, PackageCheck, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import type { DashboardPerformanceRow, DashboardResponse } from "@/types/dashboard";
+import { getJson } from "@/lib/client/api-cache";
 
 export function MobilePerformance({ kind }: { kind: "clients" | "asms" }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
-  useEffect(() => { fetch("/api/dashboard?days=30", { cache: "no-store" }).then((response) => response.json()).then(setData).catch(() => setData(null)); }, []);
+  useEffect(() => { getJson<DashboardResponse>("/api/dashboard?days=30&compact=1", { ttlMs: 15_000 }).then(setData).catch(() => setData(null)); }, []);
   if (!data) return <div className="flex min-h-48 items-center justify-center text-muted-foreground"><Loader2 className="mr-2 h-5 w-5 animate-spin" />Loading live activity</div>;
   const rows = kind === "asms" ? data.asmPerformance : data.clientPerformance;
   return <div className="space-y-4"><div className="px-1"><h2 className="text-xl font-bold">{kind === "asms" ? "ASM performance" : "Distributor reports"}</h2><p className="text-sm text-muted-foreground">Live order activity for the last 30 days</p></div><div className="grid grid-cols-2 gap-2"><Summary icon={ShoppingBag} label="Orders" value={String(data.metrics.orders)} /><Summary icon={TrendingUp} label="Revenue" value={formatCurrency(data.metrics.orderValuePaise)} /></div><div className="space-y-2">{rows.map((row, index) => <PerformanceCard key={row.id} row={row} rank={index + 1} href={kind === "asms" ? `/cf/orders?asmId=${row.id}` : `/asm/orders?distributorId=${row.id}`} />)}{rows.length === 0 && <div className="rounded-[1.5rem] border bg-white p-10 text-center"><Users className="mx-auto mb-3 h-10 w-10 text-slate-300" /><p className="font-bold">No activity yet</p><p className="mt-1 text-sm text-muted-foreground">Completed role activity will appear here.</p></div>}</div></div>;

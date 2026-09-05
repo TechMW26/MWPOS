@@ -57,6 +57,8 @@ MW-POS is fully Vercel-compatible.
 5. Copy the private key into `FIREBASE_ADMIN_PRIVATE_KEY` (with `\n` newlines)
 6. Deploy RTDB rules: `npx firebase deploy --only database`
 
+The checked-in rules deny direct browser reads and writes. All business data is accessed through role-scoped API routes, and the server REST adapter authenticates with the Firebase Admin service account. Do not deploy these rules until the three `FIREBASE_ADMIN_*` values are valid in the target environment.
+
 ### Domain & SSL
 
 - Vercel provides automatic SSL via Let's Encrypt

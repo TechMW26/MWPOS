@@ -11,11 +11,14 @@ import type { SessionData } from "@/types/models";
 import { writeAuditLog } from "./audit-service";
 import { sendOrderApprovalNotification } from "@/lib/notifications/order-notification";
 import { notifyOrderParticipants } from "@/lib/notifications/order-events";
+import { territoryMatchesResource } from "@/lib/auth/authorization";
+import { validateOrderTransition } from "@/lib/orders/workflow";
 
 interface CreateOrderInput {
   distributorId: string;
   sourceStoreId: string; // distribution store (C&F's warehouse)
   asmId: string;
+  assignedCfId?: string | null;
   items: Array<{ skuId: string; productId: string; quantity: number }>;
   paymentMode?: OrderPaymentMode;
   paymentProofType?: OrderPaymentProofType | null;
@@ -50,6 +53,8 @@ function finiteNumber(value: unknown, fallback: number | null = null): number | 
 }
 
 function buildSkuPricing(skuId: string, sku: any, product: any): SkuPricing {
+  if (sku?.isActive === false) throw new Error(`SKU ${sku.sku || skuId} is inactive`);
+  if (product?.isActive === false) throw new Error(`Product ${product.name || sku.productId || skuId} is inactive`);
   const productId = typeof sku.productId === "string" && sku.productId ? sku.productId : null;
   if (!productId) throw new Error(`SKU ${skuId} is missing a product link`);
 
@@ -103,7 +108,12 @@ async function getCfIdForDistributor(distributor: Distributor): Promise<string |
   const snap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").once("value");
   if (!snap.exists()) return null;
   const users = Object.values(snap.val() as Record<string, User>);
-  return users.find((user) => user.isActive && user.approvalStatus === "APPROVED" && user.districtId === distributor.districtId && user.cfId)?.cfId ?? null;
+  const matchingCfIds = Array.from(new Set(users
+    .filter((user) => user.isActive && user.approvalStatus === "APPROVED" && territoryMatchesResource(user, distributor.districtId))
+    .map((user) => user.cfId)
+    .filter((cfId): cfId is string => Boolean(cfId))));
+  if (matchingCfIds.length > 1) throw new Error("Multiple C&F accounts match this distributor territory; assign one explicitly");
+  return matchingCfIds[0] ?? null;
 }
 
 // ─── Create Order (ASM places for a Distributor) ─────────────
@@ -112,7 +122,10 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   // Check idempotency
   const idemSnap = await adminDb.ref(`idempotencyKeys/order/${input.idempotencyKey}`).get();
   if (idemSnap.exists()) {
-    return { orderId: idemSnap.val().orderId, status: "DRAFT" };
+    const existingOrderId = String(idemSnap.val().orderId || "");
+    const existingOrder = existingOrderId ? await getOrder(existingOrderId) : null;
+    if (existingOrder) return { orderId: existingOrder.id, status: existingOrder.status };
+    throw new Error("This order request is incomplete. Please retry with a new request.");
   }
 
   // Verify distributor exists and caller can order for it
@@ -120,7 +133,11 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   if (!distSnap.exists()) throw new Error("Distributor not found");
   const distributor = distSnap.val() as Distributor;
 
-  if (session.role === "ASM" && session.districtId && distributor.districtId !== session.districtId) {
+  if (!distributor.isActive || distributor.approvalStatus !== "APPROVED") {
+    throw new Error("Distributor is not active and approved for ordering");
+  }
+
+  if (session.role === "ASM" && !territoryMatchesResource(session, distributor.districtId)) {
     throw new Error("Distributor is not in your assigned district");
   }
   if (session.role === "DISTRIBUTOR" && !session.distributorIds.includes(input.distributorId) && !session.storeIds.includes(input.distributorId)) {
@@ -129,21 +146,24 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   if (session.role === "C_AND_F") {
     const asmsSnap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").get();
     const asms = Object.values((asmsSnap.val() as Record<string, User> | null) || {});
-    const allowedDistricts = new Set(asms.filter((asm) => asm.cfId === session.uid && asm.isActive).map((asm) => asm.districtId).filter(Boolean));
-    if (!distributor.districtId || !allowedDistricts.has(distributor.districtId)) throw new Error("Distributor is not assigned to your C&F account");
+    const assignedAsms = asms.filter((asm) => asm.cfId === session.uid && asm.isActive && asm.approvalStatus === "APPROVED");
+    if (!distributor.districtId || !assignedAsms.some((asm) => territoryMatchesResource(asm, distributor.districtId))) {
+      throw new Error("Distributor is not assigned to your C&F account");
+    }
   }
 
   const placedByDistributor = session.role === "DISTRIBUTOR";
   const placedByCf = session.role === "C_AND_F";
 
   // Get C&F assignment
-  let cfId: string | null = null;
-  if (session.role === "ASM" && session.cfId) {
+  let cfId: string | null = input.assignedCfId ?? null;
+  if (session.role === "ASM") {
     cfId = session.cfId;
+    if (!cfId) throw new Error("No C&F is assigned to your ASM account");
   } else if (placedByCf) {
     cfId = session.uid;
   } else if (placedByDistributor) {
-    cfId = session.cfId ?? await getCfIdForDistributor(distributor);
+    cfId = session.cfId ?? cfId ?? await getCfIdForDistributor(distributor);
     if (!cfId) throw new Error("No C&F is assigned to this distributor's district");
   }
 
@@ -162,6 +182,7 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     if (!pricing) throw new Error(`SKU ${item.skuId} not found`);
 
     const lineTotal = pricing.sellingPrice * item.quantity;
+    if (!Number.isSafeInteger(lineTotal)) throw new Error(`Quantity for ${pricing.sku} is too large`);
     const lineTax = Math.round(lineTotal * pricing.taxRate / 100);
 
     const itemId = uuidv4();
@@ -317,12 +338,6 @@ function formatAmount(paise: number): string {
   return '₹' + (paise / 100).toLocaleString('en-IN');
 }
 
-// ─── Submit Order ────────────────────────────────────────────
-
-export async function submitOrder(orderId: string, session: SessionData): Promise<OrderResult> {
-  return transitionOrder(orderId, "OTP_VERIFIED", session, null);
-}
-
 // ─── Approve Order (reserves inventory) ──────────────────────
 
 export async function approveOrder(orderId: string, session: SessionData, notes?: string | null): Promise<OrderResult> {
@@ -332,6 +347,9 @@ export async function approveOrder(orderId: string, session: SessionData, notes?
 
   if (!["PENDING_CF_APPROVAL", "OTP_VERIFIED"].includes(order.status)) {
     throw new Error(`Cannot approve order in status: ${order.status}`);
+  }
+  if (order.asmId && order.otpStatus !== "VERIFIED") {
+    throw new Error("Distributor Firebase OTP approval is required before C&F approval");
   }
 
   // Reserve inventory for each item
@@ -371,7 +389,6 @@ export async function transitionOrder(
   const now = new Date().toISOString();
   const statusHistoryId = uuidv4();
 
-  // Validate transition
   validateOrderTransition(fromStatus, toStatus);
 
   const statusChange: OrderStatusChange = {
@@ -560,31 +577,6 @@ export async function deliverOrder(orderId: string, session: SessionData): Promi
   });
 
   return transitionOrder(orderId, "DELIVERED", session, null);
-}
-
-// ─── Validate Transition ─────────────────────────────────────
-
-const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  DRAFT: ["PENDING_OTP", "CANCELLED"],
-  PENDING_OTP: ["OTP_VERIFIED", "CANCELLED", "DRAFT"],
-  OTP_VERIFIED: ["PENDING_CF_APPROVAL", "CF_APPROVED", "CANCELLED"],
-  PENDING_CF_APPROVAL: ["CF_APPROVED", "CF_REJECTED", "CANCELLED"],
-  CF_APPROVED: ["ALLOCATED", "CANCELLED"],
-  CF_REJECTED: ["DRAFT"],
-  ALLOCATED: ["PICKING", "CANCELLED"],
-  PICKING: ["PACKED", "CANCELLED"],
-  PACKED: ["SHIPPED", "CANCELLED"],
-  SHIPPED: ["DELIVERED"],
-  DELIVERED: [],
-  CANCELLED: [],
-  REJECTED: [],
-};
-
-function validateOrderTransition(from: OrderStatus, to: OrderStatus): void {
-  const allowed = VALID_TRANSITIONS[from];
-  if (!allowed || !allowed.includes(to)) {
-    throw new Error(`Invalid order transition: ${from} → ${to}`);
-  }
 }
 
 // ─── Get Order ───────────────────────────────────────────────
