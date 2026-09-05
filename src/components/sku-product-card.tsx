@@ -20,7 +20,19 @@ export function SkuProductCard({
   const name = product?.name || sku.sku;
 
   return (
-    <article className="flex min-w-0 flex-col overflow-hidden rounded-[1.25rem] border bg-white shadow-sm transition-transform active:scale-[0.99]">
+    <article
+      onClick={onBuy}
+      role="button"
+      tabIndex={0}
+      aria-label={`Add ${name} to cart`}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onBuy();
+        }
+      }}
+      className="flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[1.25rem] border bg-white shadow-sm transition-transform active:scale-[0.99]"
+    >
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-50">
         {product?.imageUrl ? (
           <img loading="lazy" decoding="async" src={product.imageUrl} alt={name} className="h-full w-full object-contain p-2" />
