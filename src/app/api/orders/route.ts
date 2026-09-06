@@ -4,7 +4,7 @@ import { getOrder, createOrder, approveOrder } from "@/lib/services/order-servic
 import { createOrderSchema } from "@/lib/validation/schemas";
 import { v4 as uuidv4 } from "uuid";
 import { adminDb } from "@/lib/db/admin";
-import { territoryMatchesResource } from "@/lib/auth/authorization";
+import { queryOrdersForSession } from "@/lib/orders/query";
 import type { Order, SessionData, Store, User } from "@/types/models";
 
 function canViewOrder(session: SessionData, order: Order): boolean {
@@ -16,9 +16,34 @@ function canViewOrder(session: SessionData, order: Order): boolean {
 }
 
 async function getOrderContext(orders: Order[], includeHistory: boolean) {
-  const [usersSnap, storesSnap] = await Promise.all([adminDb.ref("users").get(), adminDb.ref("stores").get()]);
-  const users = (usersSnap.val() as Record<string, User> | null) || {};
-  const stores = (storesSnap.val() as Record<string, Store> | null) || {};
+  const userIds = new Set<string>();
+  const storeIds = new Set<string>();
+  for (const order of orders) {
+    storeIds.add(order.distributorId);
+    [order.asmId, order.placedByUid, order.cfId].filter(Boolean).forEach((id) => userIds.add(id as string));
+    if (includeHistory) {
+      Object.values(order.statusHistory || {}).forEach((change) => userIds.add(change.changedBy));
+      Object.values((order as Order & { editHistory?: Record<string, { editedBy?: string }> }).editHistory || {})
+        .forEach((edit) => { if (edit.editedBy) userIds.add(edit.editedBy); });
+    }
+  }
+  async function loadRecords<T extends object>(path: string, ids: Set<string>, key: (record: T) => string): Promise<Record<string, T>> {
+    if (!ids.size) return {};
+    if (ids.size > 50) {
+      const snapshot = await adminDb.ref(path).get();
+      return (snapshot.val() as Record<string, T> | null) || {};
+    }
+    const entries: Array<T | null> = await Promise.all(Array.from(ids, async (id): Promise<T | null> => {
+      const snapshot = await adminDb.ref(`${path}/${id}`).get();
+      return snapshot.exists() ? snapshot.val() as T : null;
+    }));
+    const found = entries.filter((entry): entry is T => entry !== null);
+    return Object.fromEntries(found.map((entry) => [key(entry), entry]));
+  }
+  const [users, stores] = await Promise.all([
+    loadRecords<User>("users", userIds, (user) => user.uid),
+    loadRecords<Store>("stores", storeIds, (store) => store.id),
+  ]);
   return orders.map((order) => {
     const context = {
       distributor: {
@@ -69,14 +94,9 @@ export async function GET(request: Request) {
   }
 
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const snap = await adminDb.ref("orders").orderByChild("createdAt").startAt(new Date(cutoff).toISOString()).once("value");
-  const all = snap.val() as Record<string, Order> | null;
-  let orders = all ? Object.values(all).filter((order) => canViewOrder(session, order)) : [];
+  let orders = (await queryOrdersForSession(session, new Date(cutoff).toISOString()))
+    .filter((order) => canViewOrder(session, order));
   if (distributorId) {
-    const hasDistributorAccess = orders.some((order) => order.distributorId === distributorId);
-    if (!hasDistributorAccess && session.role !== "SUPERADMIN" && session.role !== "ADMIN") {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
     orders = orders.filter((order) => order.distributorId === distributorId);
   }
   orders = orders.filter((order) => Date.parse(order.createdAt) >= cutoff);
@@ -107,40 +127,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "No distributor is linked to this account" }, { status: 400 });
     }
 
-    // Find source store (distribution center)
-    const [sourceStoreSnap, distributorSnap] = await Promise.all([
-      adminDb.ref("stores").orderByChild("type").equalTo("DISTRIBUTION").once("value"),
-      adminDb.ref(`stores/${distributorId}`).get(),
-    ]);
-    const stores = sourceStoreSnap.val();
-    const distributionStores = stores ? Object.values(stores) as Store[] : [];
-    let assignedCfId = session.role === "C_AND_F" ? session.uid : session.cfId;
-    if (!assignedCfId && distributorSnap.exists()) {
-      const distributor = distributorSnap.val() as Store;
-      const asmsSnap = await adminDb.ref("users").orderByChild("role").equalTo("ASM").get();
-      const asms = (asmsSnap.val() as Record<string, User> | null) || {};
-      const matchingCfIds = Array.from(new Set(Object.values(asms)
-        .filter((asm) => asm.isActive && asm.approvalStatus === "APPROVED" && territoryMatchesResource(asm, distributor.districtId))
-        .map((asm) => asm.cfId)
-        .filter((cfId): cfId is string => Boolean(cfId))));
-      if (matchingCfIds.length > 1) {
-        return NextResponse.json({ message: "Multiple C&F accounts match this distributor territory; assign one explicitly" }, { status: 409 });
-      }
-      assignedCfId = matchingCfIds[0] ?? null;
-    }
-    const activeDistributionStores = distributionStores.filter((store) => store.isActive && store.approvalStatus === "APPROVED");
-    const sourceStore = assignedCfId
-      ? activeDistributionStores.find((store) => store.ownerUid === assignedCfId || store.managerUid === assignedCfId)
-      : activeDistributionStores[0];
-    // Warehouse setup controls inventory tracking, not whether a valid user can
-    // submit an order. Orders without a configured warehouse remain actionable
-    // and can be linked to one automatically when they are approved later.
-    const sourceStoreId = sourceStore?.id ?? null;
+    // Warehouse selection happens only at approval time. Loading every
+    // distribution store here made the most common order action needlessly
+    // depend on warehouse configuration and collection size.
+    const assignedCfId = session.role === "C_AND_F" ? session.uid : session.cfId;
 
     let order = await createOrder({
       ...parsed.data,
       distributorId,
-      sourceStoreId,
+      sourceStoreId: null,
       asmId: session.role === "ASM" ? session.uid : "",
       assignedCfId,
       idempotencyKey: parsed.data.idempotencyKey || uuidv4(),

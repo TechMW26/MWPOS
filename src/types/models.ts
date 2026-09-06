@@ -93,6 +93,7 @@ export interface Store {
   name: string;
   type: StoreType;
   districtId?: string | null;
+  territoryKey?: string | null;
   ownerUid: string | null;
   managerUid: string | null;
   logoUrl: string | null;
@@ -267,6 +268,7 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   statusHistory: Record<string, OrderStatusChange>;
+  items?: Record<string, OrderItem>;
 }
 
 // ─── Khata Ledger Entry ─────────────────────────────────────
@@ -382,6 +384,7 @@ export interface Sale {
   idempotencyKey: string;
   createdAt: string;
   createdBy: string;
+  items?: Record<string, SaleItem>;
 }
 
 // ─── Sale Item ───────────────────────────────────────────────

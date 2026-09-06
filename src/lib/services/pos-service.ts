@@ -98,6 +98,7 @@ export async function createSale(input: CreateSaleInput, session: SessionData): 
     idempotencyKey: input.idempotencyKey,
     createdAt: now,
     createdBy: session.uid,
+    items: saleItems,
   };
 
   const payment: Payment = {
@@ -123,10 +124,6 @@ export async function createSale(input: CreateSaleInput, session: SessionData): 
     [`payments/${payment.id}`]: payment,
     [`idempotencyKeys/sale/${input.idempotencyKey}`]: { saleId, createdAt: now },
   };
-
-  for (const [itemId, item] of Object.entries(saleItems)) {
-    updates[`sales/${saleId}/items/${itemId}`] = item;
-  }
 
   // Update register session expected cash
   if (input.paymentMethod === "CASH") {

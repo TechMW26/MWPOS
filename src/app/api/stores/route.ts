@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { requireRole, territoryMatchesResource } from "@/lib/auth/authorization";
-import { listStores, createStore, updateStore } from "@/lib/services/store-service";
+import { requireRole, territoryIds, territoryMatchesResource } from "@/lib/auth/authorization";
+import { listStores, listStoresByDistricts, listStoresByIds, createStore, updateStore } from "@/lib/services/store-service";
 import { createStoreSchema } from "@/lib/validation/schemas";
 import { adminDb } from "@/lib/db/admin";
 import type { User, UserDistributorMembership } from "@/types/models";
@@ -15,14 +15,22 @@ export async function GET(request: Request) {
   const type = (requestedType === "CUSTOMER" ? "DISTRIBUTOR" : requestedType) as "DISTRIBUTION" | "DISTRIBUTOR" | null;
   const mine = searchParams.get("mine") === "1";
 
-  let stores = await listStores(type ?? undefined);
+  let stores = session.role === "DISTRIBUTOR"
+    ? await listStoresByIds(session.distributorIds.length ? session.distributorIds : session.storeIds, type ?? undefined)
+    : session.role === "ASM"
+      ? await listStoresByDistricts(territoryIds(session), type ?? undefined)
+      : session.role === "C_AND_F" ? [] : await listStores(type ?? undefined);
   if (session.role === "ASM") {
     stores = stores.filter((store) => territoryMatchesResource(session, store.districtId));
   } else if (session.role === "C_AND_F") {
-    const usersSnap = await adminDb.ref("users").get();
+    const usersSnap = await adminDb.ref("users").orderByChild("cfId").equalTo(session.uid).get();
     const users = (usersSnap.val() as Record<string, User> | null) || {};
     const asms = Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid);
-    stores = stores.filter((store) => store.ownerUid === session.uid || store.managerUid === session.uid || asms.some((asm) => territoryMatchesResource(asm, store.districtId)));
+    const [territoryStores, ownedStores] = await Promise.all([
+      listStoresByDistricts(asms.flatMap((asm) => territoryIds(asm)), type ?? undefined),
+      listStoresByIds(session.storeIds, type ?? undefined),
+    ]);
+    stores = Array.from(new Map([...territoryStores, ...ownedStores].map((store) => [store.id, store])).values());
   } else if (session.role === "DISTRIBUTOR") {
     const ids = session.distributorIds.length ? session.distributorIds : session.storeIds;
     stores = stores.filter((store) => ids.includes(store.id) || store.ownerUid === session.uid);

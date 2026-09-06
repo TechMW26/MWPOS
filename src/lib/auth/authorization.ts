@@ -51,6 +51,15 @@ export function districtMatchesTerritory(assignedId: string | null | undefined, 
   return assigned[0] === resource[0] && assigned[1] === resource[1];
 }
 
+export function districtTerritoryKey(districtId: string | null | undefined): string | null {
+  if (!districtId) return null;
+  const parts = districtId.split("|")
+    .slice(0, 2)
+    .map((part) => part.trim().toLocaleLowerCase("en-IN"))
+    .filter(Boolean);
+  return parts.length === 2 ? parts.join("|") : null;
+}
+
 export function requireDistributorAccess(session: SessionData, distributorId: string): void {
   if (session.role === "SUPERADMIN" || session.role === "ADMIN") return;
   if (session.distributorIds.includes(distributorId)) return;

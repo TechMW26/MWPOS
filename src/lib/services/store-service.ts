@@ -8,6 +8,7 @@ import { writeAuditLog } from "./audit-service";
 import { findOrCreateCustomerOwner } from "./user-service";
 import type { Store, SessionData, UserDistributorMembership } from "@/types/models";
 import type { StoreType } from "@/types";
+import { districtTerritoryKey } from "@/lib/auth/authorization";
 
 interface CreateStoreInput {
   name: string;
@@ -46,6 +47,7 @@ export async function createStore(input: CreateStoreInput, session: SessionData)
     name: input.name,
     type: input.type,
     districtId: input.districtId ?? null,
+    territoryKey: districtTerritoryKey(input.districtId),
     ownerUid: owner?.uid ?? null,
     managerUid: null,
     logoUrl: input.logoUrl ?? null,
@@ -123,21 +125,54 @@ export async function listStores(type?: StoreType): Promise<Store[]> {
   return Object.values(snap.val() as Record<string, Store>);
 }
 
+export async function listStoresByIds(ids: string[], type?: StoreType): Promise<Store[]> {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  if (!uniqueIds.length) return [];
+  const stores = (await Promise.all(uniqueIds.map(async (id) => {
+    const snapshot = await adminDb.ref(`stores/${id}`).get();
+    return snapshot.exists() ? snapshot.val() as Store : null;
+  }))).filter((store): store is Store => Boolean(store));
+  return type ? stores.filter((store) => store.type === type) : stores;
+}
+
+export async function listStoresByDistricts(
+  districtIds: Array<string | null | undefined>,
+  type?: StoreType
+): Promise<Store[]> {
+  const keys = Array.from(new Set(
+    districtIds.map(districtTerritoryKey).filter((key): key is string => Boolean(key))
+  ));
+  if (!keys.length) return [];
+  const snapshots = await Promise.all(
+    keys.map((key) => adminDb.ref("stores").orderByChild("territoryKey").equalTo(key).get())
+  );
+  const storesById = new Map<string, Store>();
+  for (const snapshot of snapshots) {
+    const records = (snapshot.val() as Record<string, Store> | null) ?? {};
+    for (const store of Object.values(records)) storesById.set(store.id, store);
+  }
+  const stores = Array.from(storesById.values());
+  return type ? stores.filter((store) => store.type === type) : stores;
+}
+
 export async function updateStore(storeId: string, updates: Partial<Store>, session: SessionData): Promise<void> {
   const snap = await adminDb.ref(`stores/${storeId}`).get();
   if (!snap.exists()) throw new Error("Store not found");
 
   const before = snap.val() as Store;
+  const normalizedUpdates = updates.districtId !== undefined
+    ? { ...updates, territoryKey: districtTerritoryKey(updates.districtId) }
+    : updates;
 
   await adminDb.ref(`stores/${storeId}`).update({
-    ...updates,
+    ...normalizedUpdates,
     updatedAt: new Date().toISOString(),
   });
 
   const distributorSnap = await adminDb.ref(`distributors/${storeId}`).get();
   if (distributorSnap.exists()) {
     await adminDb.ref(`distributors/${storeId}`).update({
-      ...updates,
+      ...normalizedUpdates,
       updatedAt: new Date().toISOString(),
     });
   }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
-import { districtMatchesTerritory, requireRole, territoryMatchesResource } from "@/lib/auth/authorization";
+import { districtMatchesTerritory, requireRole, territoryIds } from "@/lib/auth/authorization";
 import { adminDb } from "@/lib/db/admin";
+import { listStores, listStoresByDistricts, listStoresByIds } from "@/lib/services/store-service";
 import type { Distributor, User } from "@/types/models";
 
 export async function GET(request: Request) {
@@ -22,14 +23,34 @@ export async function GET(request: Request) {
     asm = asmSnap.val() as User;
   }
 
-  const snap = await adminDb.ref("stores").orderByChild("type").equalTo("DISTRIBUTOR").once("value");
-  const all = (snap.val() as Record<string, Distributor> | null) || {};
-
-  let distributors = Object.values(all).filter((d) => d.isActive);
-
+  let distributors: Distributor[];
   if (asm) {
-    distributors = distributors.filter((distributor) => territoryMatchesResource(asm, distributor.districtId));
-  } else if (requestedDistrictId) {
+    distributors = await listStoresByDistricts(territoryIds(asm), "DISTRIBUTOR") as Distributor[];
+  } else if (session.role === "DISTRIBUTOR") {
+    const ids = session.distributorIds.length ? session.distributorIds : session.storeIds;
+    distributors = await listStoresByIds(ids, "DISTRIBUTOR") as Distributor[];
+  } else if (session.role === "C_AND_F") {
+    const [usersSnap, ordersSnap] = await Promise.all([
+      adminDb.ref("users").orderByChild("cfId").equalTo(session.uid).get(),
+      adminDb.ref("orders").orderByChild("cfId").equalTo(session.uid).get(),
+    ]);
+    const asms = Object.values((usersSnap.val() as Record<string, User> | null) || {})
+      .filter((user) => user.role === "ASM");
+    const orderDistributorIds = Array.from(new Set(
+      Object.values((ordersSnap.val() as Record<string, { distributorId: string }> | null) || {})
+        .map((order) => order.distributorId)
+    ));
+    const [territoryStores, orderedStores] = await Promise.all([
+      listStoresByDistricts(asms.flatMap((user) => territoryIds(user)), "DISTRIBUTOR"),
+      listStoresByIds(orderDistributorIds, "DISTRIBUTOR"),
+    ]);
+    distributors = Array.from(new Map([...territoryStores, ...orderedStores].map((store) => [store.id, store])).values()) as Distributor[];
+  } else {
+    distributors = await listStores("DISTRIBUTOR") as Distributor[];
+  }
+  distributors = distributors.filter((d) => d.isActive);
+
+  if (requestedDistrictId) {
     distributors = distributors.filter((distributor) => districtMatchesTerritory(requestedDistrictId, distributor.districtId));
   }
 
@@ -37,13 +58,6 @@ export async function GET(request: Request) {
   if (session.role === "DISTRIBUTOR") {
     const ids = session.distributorIds.length ? session.distributorIds : session.storeIds;
     distributors = distributors.filter((d) => ids.includes(d.id));
-  } else if (session.role === "C_AND_F") {
-    const usersSnap = await adminDb.ref("users").get();
-    const users = (usersSnap.val() as Record<string, User> | null) || {};
-    const asms = Object.values(users).filter((user) => user.role === "ASM" && user.cfId === session.uid);
-    const ordersSnap = await adminDb.ref("orders").orderByChild("cfId").equalTo(session.uid).get();
-    const orderDistributorIds = new Set(Object.values((ordersSnap.val() as Record<string, { distributorId: string }> | null) || {}).map((order) => order.distributorId));
-    distributors = distributors.filter((distributor) => asms.some((asm) => territoryMatchesResource(asm, distributor.districtId)) || orderDistributorIds.has(distributor.id));
   }
 
   return NextResponse.json(distributors);

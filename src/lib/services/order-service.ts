@@ -36,6 +36,18 @@ interface OrderResult {
   notificationDelivery?: { sent: boolean; devices: number };
 }
 
+const IDEMPOTENCY_WAIT_ATTEMPTS = 20;
+const IDEMPOTENCY_WAIT_MS = 50;
+
+async function waitForIdempotentOrder(orderId: string): Promise<Order | null> {
+  for (let attempt = 0; attempt < IDEMPOTENCY_WAIT_ATTEMPTS; attempt += 1) {
+    const order = await getOrder(orderId);
+    if (order) return order;
+    await new Promise((resolve) => setTimeout(resolve, IDEMPOTENCY_WAIT_MS));
+  }
+  return null;
+}
+
 // ─── Get product/SKU prices from server (never trust client) ─
 
 type SkuPricing = {
@@ -127,12 +139,23 @@ async function resolveOrderSourceStore(order: Order): Promise<string | null> {
     }
   }
 
-  const storesSnapshot = await adminDb.ref("stores").orderByChild("type").equalTo("DISTRIBUTION").once("value");
-  const stores = Object.values((storesSnapshot.val() as Record<string, Store> | null) ?? {})
-    .filter((store) => store.isActive && store.approvalStatus === "APPROVED");
-  const matched = order.cfId
-    ? stores.find((store) => store.ownerUid === order.cfId || store.managerUid === order.cfId)
-    : stores.length === 1 ? stores[0] : null;
+  const snapshots = order.cfId
+    ? await Promise.all([
+        adminDb.ref("stores").orderByChild("ownerUid").equalTo(order.cfId).get(),
+        adminDb.ref("stores").orderByChild("managerUid").equalTo(order.cfId).get(),
+      ])
+    : [await adminDb.ref("stores").orderByChild("type").equalTo("DISTRIBUTION").get()];
+  const stores = new Map<string, Store>();
+  for (const snapshot of snapshots) {
+    const records = (snapshot.val() as Record<string, Store> | null) ?? {};
+    for (const store of Object.values(records)) {
+      if (store.type === "DISTRIBUTION" && store.isActive && store.approvalStatus === "APPROVED") {
+        stores.set(store.id, store);
+      }
+    }
+  }
+  const candidates = Array.from(stores.values());
+  const matched = order.cfId ? candidates[0] : candidates.length === 1 ? candidates[0] : null;
   if (!matched) return null;
 
   await adminDb.ref(`orders/${order.id}`).update({ sourceStoreId: matched.id, updatedAt: new Date().toISOString() });
@@ -146,9 +169,9 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   const idemSnap = await adminDb.ref(`idempotencyKeys/order/${input.idempotencyKey}`).get();
   if (idemSnap.exists()) {
     const existingOrderId = String(idemSnap.val().orderId || "");
-    const existingOrder = existingOrderId ? await getOrder(existingOrderId) : null;
+    const existingOrder = existingOrderId ? await waitForIdempotentOrder(existingOrderId) : null;
     if (existingOrder) return { orderId: existingOrder.id, status: existingOrder.status };
-    throw new Error("This order request is incomplete. Please retry with a new request.");
+    throw new Error("This order request is already being processed. Please wait a moment and refresh.");
   }
 
   // Verify distributor exists and caller can order for it
@@ -272,6 +295,7 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     createdAt: now,
     updatedAt: now,
     statusHistory: { [initialStatusHistoryId]: initialStatusChange },
+    items: orderItems,
   };
 
   // Write order and items atomically
@@ -285,11 +309,6 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     },
     [`idempotencyKeys/order/${input.idempotencyKey}`]: { orderId, createdAt: now },
   };
-
-  // Add each item
-  for (const [itemId, item] of Object.entries(orderItems)) {
-    updates[`orders/${orderId}/items/${itemId}`] = item;
-  }
 
   if ((placedByDistributor || placedByCf) && paymentMode === "PAY_LATER" && khataEntryId) {
     const balanceSnap = await adminDb.ref(`khataBalances/${input.distributorId}/balancePaise`).get();
@@ -314,7 +333,28 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     };
   }
 
-  await adminDb.ref().update(updates);
+  // Reserve this idempotency key before the multi-location write. Without a
+  // transactional claim, two simultaneous taps can both pass the initial read
+  // and create separate orders even though sequential retries are safe.
+  const idempotencyRef = adminDb.ref(`idempotencyKeys/order/${input.idempotencyKey}`);
+  const claim = await idempotencyRef.transaction((current) => current
+    ? undefined
+    : { orderId, state: "PROCESSING", createdAt: now });
+  if (!claim.committed) {
+    const existingOrderId = String(claim.snapshot.val()?.orderId || "");
+    const existingOrder = existingOrderId ? await waitForIdempotentOrder(existingOrderId) : null;
+    if (existingOrder) return { orderId: existingOrder.id, status: existingOrder.status };
+    throw new Error("This order request is already being processed. Please wait a moment and refresh.");
+  }
+
+  try {
+    await adminDb.ref().update(updates);
+  } catch (error) {
+    // Release only our own incomplete claim so a corrected retry can proceed.
+    await idempotencyRef.transaction((current) => current?.orderId === orderId ? null : undefined)
+      .catch(() => undefined);
+    throw error;
+  }
 
   await writeAuditLog({
     actorId: session.uid,

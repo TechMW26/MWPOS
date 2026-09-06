@@ -2,7 +2,9 @@ import { adminDb } from "@/lib/db/admin";
 import type { AuditLog, InventoryBalance, Order, SessionData, Store, User } from "@/types/models";
 import type { OrderStatus } from "@/types";
 import type { DashboardActivityRow, DashboardPerformanceRow, DashboardResponse } from "@/types/dashboard";
-import { territoryMatchesResource } from "@/lib/auth/authorization";
+import { territoryIds, territoryMatchesResource } from "@/lib/auth/authorization";
+import { queryOrdersForSession } from "@/lib/orders/query";
+import { listStores, listStoresByDistricts, listStoresByIds } from "@/lib/services/store-service";
 
 export interface DashboardFilters {
   days: number;
@@ -124,22 +126,94 @@ function activityFromOrders(orders: Order[], usersById: Map<string, User>): Dash
   })));
 }
 
+function uniqueBy<T>(records: T[], key: (record: T) => string): T[] {
+  return Array.from(new Map(records.map((record) => [key(record), record])).values());
+}
+
+async function loadDashboardUsers(session: SessionData): Promise<User[]> {
+  if (session.role === "SUPERADMIN" || session.role === "ADMIN") {
+    return values<User>((await adminDb.ref("users").get()).val());
+  }
+  if (session.role === "C_AND_F") {
+    const [self, asms] = await Promise.all([
+      adminDb.ref(`users/${session.uid}`).get(),
+      adminDb.ref("users").orderByChild("cfId").equalTo(session.uid).get(),
+    ]);
+    return uniqueBy([
+      ...(self.exists() ? [self.val() as User] : []),
+      ...values<User>(asms.val()).filter((user) => user.role === "ASM"),
+    ], (user) => user.uid);
+  }
+  const ids = new Set([session.uid, session.cfId].filter((id): id is string => Boolean(id)));
+  return (await Promise.all(Array.from(ids, async (id) => {
+    const snapshot = await adminDb.ref(`users/${id}`).get();
+    return snapshot.exists() ? snapshot.val() as User : null;
+  }))).filter((user): user is User => Boolean(user));
+}
+
+async function loadDashboardStores(session: SessionData, users: User[]): Promise<Store[]> {
+  if (session.role === "SUPERADMIN" || session.role === "ADMIN") return listStores();
+  if (session.role === "DISTRIBUTOR") {
+    return listStoresByIds(session.distributorIds.length ? session.distributorIds : session.storeIds);
+  }
+  if (session.role === "ASM") return listStoresByDistricts(territoryIds(session));
+  const asms = users.filter((user) => user.role === "ASM" && user.cfId === session.uid);
+  const [territoryStores, ownedStores] = await Promise.all([
+    listStoresByDistricts(asms.flatMap((asm) => territoryIds(asm))),
+    listStoresByIds(session.storeIds),
+  ]);
+  return uniqueBy([...territoryStores, ...ownedStores], (store) => store.id);
+}
+
+async function appendMissingRecords<T extends object>(
+  current: T[],
+  ids: Iterable<string>,
+  path: string,
+  key: (record: T) => string
+): Promise<T[]> {
+  const existing = new Set(current.map(key));
+  const missing = Array.from(new Set(ids)).filter((id) => id && !existing.has(id));
+  if (!missing.length) return current;
+  const loaded: Array<T | null> = await Promise.all(missing.map(async (id): Promise<T | null> => {
+    const snapshot = await adminDb.ref(`${path}/${id}`).get();
+    return snapshot.exists() ? snapshot.val() as T : null;
+  }));
+  return uniqueBy([...current, ...loaded.filter((record): record is T => record !== null)], key);
+}
+
 export async function getDashboard(session: SessionData, filters: DashboardFilters): Promise<DashboardResponse> {
   const cutoff = Date.now() - filters.days * 24 * 60 * 60 * 1000;
   const cutoffIso = new Date(cutoff).toISOString();
-  const [ordersSnap, storesSnap, usersSnap, productsSnap, inventorySnap, auditSnap] = await Promise.all([
-    adminDb.ref("orders").orderByChild("createdAt").startAt(cutoffIso).get(),
-    adminDb.ref("stores").get(),
-    adminDb.ref("users").get(),
+  const [queriedOrders, initialUsers, productsSnap, auditSnap] = await Promise.all([
+    queryOrdersForSession(session, cutoffIso),
+    loadDashboardUsers(session),
     filters.compact ? Promise.resolve(null) : adminDb.ref("products").get(),
-    filters.compact ? Promise.resolve(null) : adminDb.ref("inventoryBalances").get(),
     filters.compact ? Promise.resolve(null) : adminDb.ref("auditLogs").orderByChild("createdAt").startAt(cutoffIso).limitToLast(1000).get(),
   ]);
 
-  const allOrders = values<Order>(ordersSnap.val());
-  const allStores = values<Store>(storesSnap.val());
+  const allOrders = queriedOrders;
+  const initialStores = await loadDashboardStores(session, initialUsers);
+  const allStores = await appendMissingRecords(
+    initialStores,
+    allOrders.flatMap((order) => [order.distributorId, order.sourceStoreId].filter((id): id is string => Boolean(id))),
+    "stores",
+    (store) => store.id
+  );
+  const users = await appendMissingRecords(
+    initialUsers,
+    allOrders.flatMap((order) => [order.asmId, order.placedByUid, order.cfId].filter((id): id is string => Boolean(id))),
+    "users",
+    (user) => user.uid
+  );
+  const inventoryData = filters.compact
+    ? null
+    : session.role === "SUPERADMIN" || session.role === "ADMIN"
+      ? (await adminDb.ref("inventoryBalances").get()).val()
+      : Object.fromEntries(await Promise.all(allStores.map(async (store) => {
+          const snapshot = await adminDb.ref(`inventoryBalances/${store.id}`).get();
+          return [store.id, snapshot.val()] as const;
+        })));
   const storesById = new Map(allStores.map((store) => [store.id, store]));
-  const users = values<User>(usersSnap.val());
   const usersById = new Map(users.map((user) => [user.uid, user]));
   const scopedOrders = scopeOrdersForSession(session, allOrders);
   const asms = scopedAsms(session, users, scopedOrders);
@@ -167,7 +241,7 @@ export async function getDashboard(session: SessionData, filters: DashboardFilte
   const inventoryStoreIds = session.role === "SUPERADMIN" || session.role === "ADMIN"
     ? new Set(stores.map((store) => store.id))
     : new Set([...visibleDistributorIds, ...sourceStoreIds]);
-  const inventory = getInventoryBalances(inventorySnap?.val()).filter((balance) => inventoryStoreIds.has(balance.storeId));
+  const inventory = getInventoryBalances(inventoryData).filter((balance) => inventoryStoreIds.has(balance.storeId));
   const activeProducts = values<{ isActive?: boolean }>(productsSnap?.val()).filter((product) => product.isActive !== false).length;
   let orderValuePaise = 0;
   let khataDuePaise = 0;

@@ -1,4 +1,5 @@
 import { getFirebaseAdminApp } from "@/lib/firebase/admin-auth";
+import { validateRtdbUpdate, validateRtdbValue } from "@/lib/db/rtdb-validation";
 
 type QueryParams = Record<string, string | number | boolean>;
 
@@ -218,6 +219,7 @@ class RtdbRef {
   }
 
   async set(value: unknown): Promise<void> {
+    validateRtdbValue(value);
     const response = await fetch(buildUrl(this.path), {
       method: "PUT",
       headers: await databaseHeaders({ "Content-Type": "application/json" }),
@@ -232,6 +234,7 @@ class RtdbRef {
   async update(value: Record<string, unknown>): Promise<void> {
     let body: string;
     try {
+      validateRtdbUpdate(value);
       body = JSON.stringify(value);
     } catch (e) {
       throw new Error(`RTDB update failed: cannot serialize data — ${e instanceof Error ? e.message : String(e)}`);
@@ -263,6 +266,7 @@ class RtdbRef {
       const snapshot = new RtdbSnapshot(current);
       const nextValue = updater(snapshot.exists() ? (current as T) : null);
       if (nextValue === undefined) return { committed: false, snapshot };
+      validateRtdbValue(nextValue);
 
       const etag = readResponse.headers.get("etag");
       if (!etag) throw new Error("RTDB transaction failed: missing ETag");
@@ -281,9 +285,12 @@ class RtdbRef {
 }
 
 function buildUrl(path: string, params: QueryParams = {}): string {
-  const databaseUrl = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
+  // Prefer a server-only runtime value. NEXT_PUBLIC_* variables are compiled
+  // into Next.js bundles and cannot be safely overridden for isolated tests or
+  // alternate server environments after the build has been produced.
+  const databaseUrl = process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL;
   if (!databaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_FIREBASE_DATABASE_URL");
+    throw new Error("Missing FIREBASE_DATABASE_URL or NEXT_PUBLIC_FIREBASE_DATABASE_URL");
   }
 
   const cleanBase = databaseUrl.replace(/\/$/, "");

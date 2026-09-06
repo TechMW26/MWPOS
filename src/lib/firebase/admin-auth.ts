@@ -57,7 +57,7 @@ export function getFirebaseAdminApp(): App {
     return initializeApp({
       credential: cert({ projectId, clientEmail, privateKey }),
       projectId,
-      databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+      databaseURL: process.env.FIREBASE_DATABASE_URL ?? process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
     });
   } catch (error) {
     console.error(

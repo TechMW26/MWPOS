@@ -3,16 +3,24 @@
     ".read": false,
     ".write": false,
     "users": {
-      ".indexOn": ["email", "role"]
+      ".indexOn": ["email", "phone", "firebaseUid", "role", "cfId"]
     },
     "stores": {
-      ".indexOn": ["type"]
+      ".indexOn": ["type", "territoryKey", "ownerUid", "managerUid", "approvalStatus"]
     },
     "orders": {
-      ".indexOn": ["createdAt", "distributorId", "asmId", "cfId"]
+      ".indexOn": ["createdAt", "distributorId", "asmId", "placedByUid", "cfId"]
     },
     "auditLogs": {
       ".indexOn": ["createdAt"]
+    },
+    "productSkus": {
+      ".indexOn": ["productId", "sku", "barcode"]
+    },
+    "notifications": {
+      "$uid": {
+        ".indexOn": ["createdAt", "read"]
+      }
     }
   }
 }

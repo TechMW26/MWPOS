@@ -3,6 +3,7 @@ import { loadEnvConfig } from "@next/env";
 import { v4 as uuidv4 } from "uuid";
 import { adminDb } from "../src/lib/db/admin";
 import { INDIAN_STATES_DISTRICTS } from "../src/lib/indian-districts";
+import { districtTerritoryKey } from "../src/lib/auth/authorization";
 import type { District, Store, User } from "../src/types/models";
 
 type ResolutionSource = "PINCODE" | "ADDRESS" | "POST_OFFICE" | "REGION_FALLBACK";
@@ -254,7 +255,9 @@ async function main(): Promise<void> {
     return counts;
   }, {});
   const changed = resolved.filter(({ store, resolution }) =>
-    store.districtId !== `${resolution.state}|${resolution.district}` || store.state !== resolution.state
+    store.districtId !== `${resolution.state}|${resolution.district}`
+    || store.state !== resolution.state
+    || store.territoryKey !== districtTerritoryKey(`${resolution.state}|${resolution.district}`)
   );
 
   console.log(JSON.stringify({
@@ -282,10 +285,13 @@ async function main(): Promise<void> {
   const updates: Record<string, unknown> = {};
   for (const { store, resolution } of changed) {
     const districtId = `${resolution.state}|${resolution.district}`;
+    const territoryKey = districtTerritoryKey(districtId);
     updates[`stores/${store.id}/districtId`] = districtId;
+    updates[`stores/${store.id}/territoryKey`] = territoryKey;
     updates[`stores/${store.id}/state`] = resolution.state;
     updates[`stores/${store.id}/updatedAt`] = now;
     updates[`distributors/${store.id}/districtId`] = districtId;
+    updates[`distributors/${store.id}/territoryKey`] = territoryKey;
     updates[`distributors/${store.id}/state`] = resolution.state;
     updates[`distributors/${store.id}/updatedAt`] = now;
     const auditId = uuidv4();
@@ -296,7 +302,7 @@ async function main(): Promise<void> {
       entityType: "STORE",
       entityId: store.id,
       before: { districtId: store.districtId ?? null, state: store.state },
-      after: { districtId, state: resolution.state, locationSource: resolution.source },
+      after: { districtId, territoryKey, state: resolution.state, locationSource: resolution.source },
       ipAddress: null,
       createdAt: now,
     };
