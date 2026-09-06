@@ -184,15 +184,19 @@ async function appendMissingRecords<T extends object>(
 export async function getDashboard(session: SessionData, filters: DashboardFilters): Promise<DashboardResponse> {
   const cutoff = Date.now() - filters.days * 24 * 60 * 60 * 1000;
   const cutoffIso = new Date(cutoff).toISOString();
-  const [queriedOrders, initialUsers, productsSnap, auditSnap] = await Promise.all([
+  const usersPromise = loadDashboardUsers(session);
+  const storesPromise = session.role === "C_AND_F"
+    ? usersPromise.then((users) => loadDashboardStores(session, users))
+    : loadDashboardStores(session, []);
+  const [queriedOrders, initialUsers, initialStores, productsSnap, auditSnap] = await Promise.all([
     queryOrdersForSession(session, cutoffIso),
-    loadDashboardUsers(session),
+    usersPromise,
+    storesPromise,
     filters.compact ? Promise.resolve(null) : adminDb.ref("products").get(),
     filters.compact ? Promise.resolve(null) : adminDb.ref("auditLogs").orderByChild("createdAt").startAt(cutoffIso).limitToLast(1000).get(),
   ]);
 
   const allOrders = queriedOrders;
-  const initialStores = await loadDashboardStores(session, initialUsers);
   const allStores = await appendMissingRecords(
     initialStores,
     allOrders.flatMap((order) => [order.distributorId, order.sourceStoreId].filter((id): id is string => Boolean(id))),
