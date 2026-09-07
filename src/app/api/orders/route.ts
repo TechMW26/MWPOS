@@ -5,15 +5,8 @@ import { createOrderSchema } from "@/lib/validation/schemas";
 import { v4 as uuidv4 } from "uuid";
 import { adminDb } from "@/lib/db/admin";
 import { queryOrdersForSession } from "@/lib/orders/query";
-import type { Order, SessionData, Store, User } from "@/types/models";
-
-function canViewOrder(session: SessionData, order: Order): boolean {
-  if (session.role === "SUPERADMIN" || session.role === "ADMIN") return true;
-  if (session.role === "C_AND_F") return order.cfId === session.uid;
-  if (session.role === "ASM") return order.asmId === session.uid || order.placedByUid === session.uid;
-  const distributorIds = session.distributorIds.length ? session.distributorIds : session.storeIds;
-  return distributorIds.includes(order.distributorId);
-}
+import { canViewOrder } from "@/lib/orders/access";
+import type { Order, Store, User } from "@/types/models";
 
 async function getOrderContext(orders: Order[], includeHistory: boolean) {
   const userIds = new Set<string>();

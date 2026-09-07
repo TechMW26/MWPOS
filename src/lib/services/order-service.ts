@@ -310,29 +310,6 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
     [`idempotencyKeys/order/${input.idempotencyKey}`]: { orderId, createdAt: now },
   };
 
-  if ((placedByDistributor || placedByCf) && paymentMode === "PAY_LATER" && khataEntryId) {
-    const balanceSnap = await adminDb.ref(`khataBalances/${input.distributorId}/balancePaise`).get();
-    const currentBalance = balanceSnap.exists() ? finiteNumber(balanceSnap.val(), 0) ?? 0 : 0;
-    const balanceAfter = currentBalance + totalPaise;
-    const khataEntry: KhataLedgerEntry = {
-      id: khataEntryId,
-      storeId: input.distributorId,
-      orderId,
-      type: "DEBIT",
-      amountPaise: totalPaise,
-      balanceAfterPaise: balanceAfter,
-      notes: input.notes ?? "Order placed on khata",
-      createdBy: session.uid,
-      createdAt: now,
-    };
-    updates[`khataLedger/${input.distributorId}/${khataEntryId}`] = khataEntry;
-    updates[`khataBalances/${input.distributorId}`] = {
-      storeId: input.distributorId,
-      balancePaise: balanceAfter,
-      updatedAt: now,
-    };
-  }
-
   // Reserve this idempotency key before the multi-location write. Without a
   // transactional claim, two simultaneous taps can both pass the initial read
   // and create separate orders even though sequential retries are safe.
@@ -348,6 +325,36 @@ export async function createOrder(input: CreateOrderInput, session: SessionData)
   }
 
   try {
+    // Khata balance must be incremented atomically AFTER the idempotency claim,
+    // otherwise a duplicate request would debit the balance twice.
+    if ((placedByDistributor || placedByCf) && paymentMode === "PAY_LATER" && khataEntryId) {
+      const balanceResult = await adminDb.ref(`khataBalances/${input.distributorId}`).transaction((current) => {
+        const currentBalance = current && typeof current.balancePaise !== "undefined"
+          ? finiteNumber(current.balancePaise, 0) ?? 0
+          : 0;
+        return {
+          storeId: input.distributorId,
+          balancePaise: currentBalance + totalPaise,
+          updatedAt: now,
+        };
+      });
+      const balanceAfter = finiteNumber(
+        (balanceResult.snapshot.val() as { balancePaise?: unknown } | null)?.balancePaise,
+        0,
+      ) ?? 0;
+      updates[`khataLedger/${input.distributorId}/${khataEntryId}`] = {
+        id: khataEntryId,
+        storeId: input.distributorId,
+        orderId,
+        type: "DEBIT",
+        amountPaise: totalPaise,
+        balanceAfterPaise: balanceAfter,
+        notes: input.notes ?? "Order placed on khata",
+        createdBy: session.uid,
+        createdAt: now,
+      } as KhataLedgerEntry;
+    }
+
     await adminDb.ref().update(updates);
   } catch (error) {
     // Release only our own incomplete claim so a corrected retry can proceed.

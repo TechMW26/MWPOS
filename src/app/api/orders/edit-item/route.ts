@@ -163,22 +163,23 @@ export async function POST(request: Request) {
 
       if (order.paymentMode === "PAY_LATER" && order.khataEntryId) {
         const ledgerPath = `khataLedger/${order.distributorId}/${order.khataEntryId}`;
-        const [ledgerSnap, balanceSnap] = await Promise.all([
-          adminDb.ref(ledgerPath).get(),
-          adminDb.ref(`khataBalances/${order.distributorId}/balancePaise`).get(),
-        ]);
+        const ledgerSnap = await adminDb.ref(ledgerPath).get();
         if (ledgerSnap.exists()) {
           const debitedAmount = Number(ledgerSnap.val()?.amountPaise);
-          const currentBalance = Number(balanceSnap.val());
-          if (!balanceSnap.exists() || !Number.isSafeInteger(debitedAmount) || !Number.isSafeInteger(currentBalance)) {
+          if (!Number.isSafeInteger(debitedAmount)) {
+            return NextResponse.json({ message: "Khata balance data is invalid; order was not changed" }, { status: 409 });
+          }
+          const balanceResult = await adminDb.ref(`khataBalances/${order.distributorId}`).transaction((current) => {
+            const currentBalance = current && typeof current.balancePaise !== "undefined"
+              ? Number(current.balancePaise)
+              : NaN;
+            if (!Number.isSafeInteger(currentBalance)) return undefined;
+            return { storeId: order.distributorId, balancePaise: currentBalance - debitedAmount, updatedAt: now };
+          });
+          if (!balanceResult.committed) {
             return NextResponse.json({ message: "Khata balance data is invalid; order was not changed" }, { status: 409 });
           }
           updates[ledgerPath] = null;
-          updates[`khataBalances/${order.distributorId}`] = {
-            storeId: order.distributorId,
-            balancePaise: currentBalance - debitedAmount,
-            updatedAt: now,
-          };
         }
       }
     }

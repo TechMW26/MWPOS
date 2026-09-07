@@ -100,9 +100,13 @@ export async function POST(request: Request) {
       const ledgerPath = `khataLedger/${order.distributorId}/${order.khataEntryId}`;
       const existingLedger = await adminDb.ref(ledgerPath).get();
       if (!existingLedger.exists()) {
-        const balanceSnap = await adminDb.ref(`khataBalances/${order.distributorId}/balancePaise`).get();
-        const currentBalance = Number(balanceSnap.val()) || 0;
-        const balanceAfter = currentBalance + order.totalPaise;
+        const balanceResult = await adminDb.ref(`khataBalances/${order.distributorId}`).transaction((current) => {
+          const currentBalance = current && typeof current.balancePaise !== "undefined"
+            ? Number(current.balancePaise) || 0
+            : 0;
+          return { storeId: order.distributorId, balancePaise: currentBalance + order.totalPaise, updatedAt: now };
+        });
+        const balanceAfter = Number((balanceResult.snapshot.val() as { balancePaise?: unknown } | null)?.balancePaise) || 0;
         const khataEntry: KhataLedgerEntry = {
           id: order.khataEntryId,
           storeId: order.distributorId,
@@ -115,7 +119,6 @@ export async function POST(request: Request) {
           createdAt: now,
         };
         updates[ledgerPath] = khataEntry;
-        updates[`khataBalances/${order.distributorId}`] = { storeId: order.distributorId, balancePaise: balanceAfter, updatedAt: now };
       }
     }
 

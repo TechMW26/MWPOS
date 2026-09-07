@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { adminDb } from "@/lib/db/admin";
+import { canManageInventory } from "@/lib/auth/authorization";
 import { assignProductToStoreSchema } from "@/lib/validation/schemas";
 
 export async function GET(request: Request) {
@@ -29,6 +30,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (!canManageInventory(session)) return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   try {
     const body = await request.json();
     const parsed = assignProductToStoreSchema.safeParse(body);

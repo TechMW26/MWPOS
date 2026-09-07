@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { adminDb } from "@/lib/db/admin";
+import { canManageInventory } from "@/lib/auth/authorization";
 import { createSkuSchema } from "@/lib/validation/schemas";
 import { v4 as uuidv4 } from "uuid";
 
@@ -15,6 +16,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (!canManageInventory(session)) return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   try {
     const body = await request.json();
     const parsed = createSkuSchema.safeParse(body);

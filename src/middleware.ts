@@ -46,9 +46,9 @@ export async function middleware (request: NextRequest) {
   }
 
   try {
-    const secret = new TextEncoder().encode(
-      process.env.SESSION_SECRET ?? 'fallback-dev-secret'
-    )
+    const secretValue = process.env.SESSION_SECRET
+    if (!secretValue) return redirectToLogin(request)
+    const secret = new TextEncoder().encode(secretValue)
     const { payload } = await jwtVerify(token, secret)
     const session = payload as unknown as SessionData
 

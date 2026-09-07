@@ -9,7 +9,7 @@
       ".indexOn": ["type", "territoryKey", "ownerUid", "managerUid", "approvalStatus"]
     },
     "orders": {
-      ".indexOn": ["createdAt", "distributorId", "asmId", "placedByUid", "cfId"]
+      ".indexOn": ["createdAt", "distributorId", "asmId", "placedByUid", "cfId", "paymentProofUrl"]
     },
     "auditLogs": {
       ".indexOn": ["createdAt"]

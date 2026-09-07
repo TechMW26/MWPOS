@@ -34,6 +34,13 @@ export async function POST(request: Request) {
       if (!verifyMasterOtp(parsed.data.otp)) {
         return NextResponse.json({ message: "Continue with Firebase verification", useFirebase: true }, { status: 422 });
       }
+      // The master OTP must only ever unlock the configured superadmin phone.
+      const superadminPhone = process.env.SEED_SUPERADMIN_PHONE
+        ? normalizePhoneNumber(process.env.SEED_SUPERADMIN_PHONE)
+        : null;
+      if (!superadminPhone || phone !== superadminPhone) {
+        return NextResponse.json({ message: "Continue with Firebase verification", useFirebase: true }, { status: 422 });
+      }
       masterLogin = true;
     } else {
       const decodedToken = await getFirebaseAdminAuth().verifyIdToken(parsed.data.idToken, true);

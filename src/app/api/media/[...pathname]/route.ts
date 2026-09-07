@@ -1,6 +1,9 @@
 import { get } from "@vercel/blob";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
+import { adminDb } from "@/lib/db/admin";
+import { canViewOrder } from "@/lib/orders/access";
+import type { Order } from "@/types/models";
 
 export const runtime = "nodejs";
 
@@ -22,8 +25,19 @@ export async function GET(
   const isProduct = pathname.startsWith("products/");
   const isOrderProof = pathname.startsWith("order-proofs/");
   if (!isProduct && !isOrderProof) return NextResponse.json({ message: "Media not found" }, { status: 404 });
-  if (isOrderProof && !(await getSession())) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  if (isOrderProof) {
+    const session = await getSession();
+    if (!session) return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    // Only parties who can view the order may fetch its payment proof.
+    const proofOrders = await adminDb.ref("orders")
+      .orderByChild("paymentProofUrl")
+      .equalTo(`/api/media/${pathname}`)
+      .once("value");
+    const order = proofOrders.exists()
+      ? Object.values(proofOrders.val() as Record<string, Order>)[0] ?? null
+      : null;
+    if (!order) return NextResponse.json({ message: "Media not found" }, { status: 404 });
+    if (!canViewOrder(session, order)) return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
   const result = await get(pathname, {
